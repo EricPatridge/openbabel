@@ -148,10 +148,7 @@ namespace OpenBabel {
         "     This atom will be used to begin the SMILES string.\n"
         "  l  <atomno> Specify the last atom\n"
         "     The output will be rearranged so that any additional\n"
-        "     SMILES added to the end will be attached to this atom.\n\n"
-        "  T  <max seconds> Specify the canonicalization timeout\n"
-        "     Canonicalization can take a while for symmetric molecules and a\n"
-        "     timeout is used. The default is 5 seconds.\n\n";
+        "     SMILES added to the end will be attached to this atom.\n\n";
     }
 
 
@@ -364,7 +361,6 @@ namespace OpenBabel {
         if(pConv->AddChemObject(
           pmol1->DoTransformations(pConv->GetOptions(OBConversion::GENOPTIONS),pConv))<0)//using Read or ReadString or ReadFile
         {
-          delete pmol2;
           obErrorLog.ThrowError(__FUNCTION__, smiles +
             " SmilesFormat accepts reactions only with the \"Convert\" (commandline) interface", obError);
 
@@ -373,11 +369,9 @@ namespace OpenBabel {
         if(pmol2->NumAtoms())
            pConv->AddChemObject(
              pmol2->DoTransformations(pConv->GetOptions(OBConversion::GENOPTIONS),pConv));
-        delete pmol2;
         return true; //valid reaction return
       }
     }
-    delete pmol2;
     obErrorLog.ThrowError(__FUNCTION__, smiles + " contained '>' but was not a acceptable reaction", obError);
     return false;
   }
@@ -542,10 +536,10 @@ namespace OpenBabel {
 
     // Add the data stored inside the _tetrahedralMap to the atoms now after end
     // modify so they don't get lost.
-    if(!_tetrahedralMap.empty()) {
+    if(_tetrahedralMap.size() > 0) {
       OBAtom* atom;
       map<OBAtom*, OBTetrahedralStereo::Config*>::iterator ChiralSearch;
-      for(ChiralSearch = _tetrahedralMap.begin(); ChiralSearch != _tetrahedralMap.end(); ++ChiralSearch) {
+      for(ChiralSearch = _tetrahedralMap.begin(); ChiralSearch != _tetrahedralMap.end(); ChiralSearch++) {
         atom = ChiralSearch->first;
         OBTetrahedralStereo::Config *ts = ChiralSearch->second;
         if (!ts)
@@ -586,10 +580,10 @@ namespace OpenBabel {
 
     // Add the data stored inside the _squarePlanarMap to the atoms now after end
     // modify so they don't get lost.
-    if(!_squarePlanarMap.empty()) {
+    if(_squarePlanarMap.size() > 0) {
       OBAtom* atom;
       map<OBAtom*, OBSquarePlanarStereo::Config*>::iterator ChiralSearch;
-      for(ChiralSearch = _squarePlanarMap.begin(); ChiralSearch != _squarePlanarMap.end(); ++ChiralSearch) {
+      for(ChiralSearch = _squarePlanarMap.begin(); ChiralSearch != _squarePlanarMap.end(); ChiralSearch++) {
         atom = ChiralSearch->first;
         OBSquarePlanarStereo::Config *sp = ChiralSearch->second;
         if (!sp)
@@ -648,7 +642,7 @@ namespace OpenBabel {
     //
     // Can be written as:
     // (a) C/C=C/1\NC1 -- preferred
-    // (b) C/C=C1\NC\1 
+    // (b) C/C=C1\NC\1
     // (c) C/C=C/1\NC\1
     //  or indeed by replacing the "\N" with "N".
 
@@ -660,7 +654,7 @@ namespace OpenBabel {
     // (b) C/C=C/1NC/1  -- ignore ring closure stereo => treated as C/C=C1NC1  => CC=C1NC1
     // (c) C/C=C/1\NC/1 -- ignore ring closure stereo => treated as C/C=C1\NC1 => C/C=C/1\NC1
 
-    // The ring closure bond is either up or down with respect 
+    // The ring closure bond is either up or down with respect
     // to the double bond. Our task here is to figure out which it is,
     // based on the contents of _stereorbond.
 
@@ -684,7 +678,7 @@ namespace OpenBabel {
         found = false;
       }
     }
-    
+
     if (!found)
       return 0;
     else
@@ -725,7 +719,7 @@ namespace OpenBabel {
       vector<bool> bond_stereo(2, true); // Store the stereo of the chosen bonds at each end of the dbl bond
       vector<OBBond*> stereo_bond(2, (OBBond*) NULL); // These are the chosen stereo bonds
       vector<OBBond*> other_bond(2, (OBBond*) NULL);  // These are the 'other' bonds at each end
-      
+
       for (int i = 0; i < 2; ++i) { // Loop over each end of the double bond in turn
 
         FOR_BONDS_OF_ATOM(bi, dbl_bond_atoms[i]) {
@@ -754,7 +748,7 @@ namespace OpenBabel {
             other_bond[i] = b; // Use this for the 'other' bond
             continue;
           }
-          
+
           if (stereo_bond[i] == NULL) { // This is a first stereo bond
             stereo_bond[i] = b; // Use this for the 'stereo' bond
             bond_stereo[i] = stereo;
@@ -851,13 +845,13 @@ namespace OpenBabel {
       {
         int j = depth-1;
         bond=mol.GetBond(_path[j--]);
-        if (bond->GetBO() < 2) { // don't rewrite explicit double bonds
+        if (bond->GetBO() != 2) { // don't rewrite explicit double bonds
           bond->SetBO(5);
         }
         while( j >= 0 )
           {
             bond=mol.GetBond(_path[j--]);
-            if (bond->GetBO() < 2) { // don't rewrite explicit double bonds
+            if (bond->GetBO() != 2) { // don't rewrite explicit double bonds
               bond->SetBO(5);
             }
             if(bond->GetBeginAtom() == atom || bond->GetEndAtom() == atom)
@@ -1078,9 +1072,9 @@ namespace OpenBabel {
         assert(prevatom);
         if(arom && prevatom->IsAromatic())
           {
-            if (_order < 2) _order=5; //Potential aromatic bond -- but flag explicit double bonds
+            if (_order != 2) _order=5; //Potential aromatic bond -- but flag explicit double bonds
 
-            if (prevatom->GetSpinMultiplicity() && _order != 3)
+            if (prevatom->GetSpinMultiplicity())
               {
                 //Previous atom had been marked, so bond is potentially a double bond
                 //if it is not part of an aromatic ring. This will be decided when all
@@ -1965,7 +1959,7 @@ namespace OpenBabel {
     if (charge) {
       atom->SetFormalCharge(charge);
       if (abs(charge) > 10 || charge > element) { // if the charge is +/- 10 or more than the number of electrons
-        errorMsg << "Atom " << atom->GetIdx() << " had an unrealistic charge of " << charge 
+        errorMsg << "Atom " << atom->GetIdx() << " had an unrealistic charge of " << charge
                  << "." << endl;
         obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);
       }
@@ -1984,7 +1978,7 @@ namespace OpenBabel {
         mol.SetAromaticPerceived();             // prevent aromaticity analysis
         if(arom && prevatom->IsAromatic())
           {
-            if (_order < 2) _order=5; //Potential aromatic bond
+            _order=5; //Potential aromatic bond
 
             if (prevatom->GetSpinMultiplicity())
               {
@@ -2060,7 +2054,7 @@ namespace OpenBabel {
 
     OBAtom *atom;
     vector<ExternalBond>::iterator bond;
-    for (bond = _extbond.begin(); bond != _extbond.end(); ++bond) {
+    for (bond = _extbond.begin(); bond != _extbond.end(); bond++) {
       // create new dummy atom
       atom = mol.NewAtom();
       atom->SetAtomicNum(0);
@@ -2124,6 +2118,7 @@ namespace OpenBabel {
         _updown = BondDownChar;
         _ptr++;
         break;
+        _ptr++;
       case '\\': // chiral, but _order still == 1
         _updown = BondUpChar;
         _ptr++;
@@ -2150,7 +2145,7 @@ namespace OpenBabel {
     //check for dot disconnect closures
     vector<ExternalBond>::iterator bond;
     int upDown, bondOrder;
-    for (bond = _extbond.begin(); bond != _extbond.end(); ++bond) {
+    for (bond = _extbond.begin(); bond != _extbond.end(); bond++) {
 
       if (bond->digit == digit) {
         upDown = (_updown > bond->updown) ? _updown : bond->updown;
@@ -2192,13 +2187,6 @@ namespace OpenBabel {
   {
     int digit;
     char str[10];
-
-    // The ring closure must be associated with a 'prev' atom
-    OBAtom* prevatom = mol.GetAtom(_prev);
-    if (!prevatom) {
-      obErrorLog.ThrowError(__FUNCTION__,"Number not parsed correctly as a ring bond", obWarning);
-      return false;
-    }
 
     if (*_ptr == '%')
       {
@@ -2244,7 +2232,7 @@ namespace OpenBabel {
         sb.updown.push_back(bond->updown);
         sb.atoms.push_back(mol.GetAtom(bond->prev));
         _stereorbond[mol.GetBond(bond->prev, _prev)] = sb; // Store for later
-        
+
         // after adding a bond to atom "_prev"
         // search to see if atom is bonded to a chiral atom
         // need to check both _prev and bond->prev as closure is direction independent
@@ -2293,7 +2281,13 @@ namespace OpenBabel {
     ringClosure.updown = _updown;
 
     OBAtom* atom = mol.GetAtom(_prev);
+    if (!atom) {
+      obErrorLog.ThrowError(__FUNCTION__,"Number not parsed correctly as a ring bond", obWarning);
+      return false;
+    }
+
     ringClosure.numConnections = NumConnections(atom); //store position to insert closure bond
+
     _rclose.push_back(ringClosure);
     _order = 1;
     _updown = ' ';
@@ -2420,7 +2414,7 @@ namespace OpenBabel {
   OBCanSmiNode::~OBCanSmiNode()
   {
     vector<OBCanSmiNode*>::iterator i;
-    for (i = _child_nodes.begin();i != _child_nodes.end();++i)
+    for (i = _child_nodes.begin();i != _child_nodes.end();i++)
       delete (*i);
   }
 
@@ -2567,7 +2561,7 @@ namespace OpenBabel {
           idx++; //increment idx and start over if digit is already used
           j = _vopen.begin();
         }
-      else ++j;
+      else j++;
 
     return(idx);
   }
@@ -2640,7 +2634,7 @@ namespace OpenBabel {
       if (nbr_atom->HasDoubleBond())
         // Check whether the nbr_atom is a begin or end in any CisTransStereo. If so,
         // then the ring opening already had the symbol.
-        for (ChiralSearch = _cistrans.begin(); ChiralSearch != _cistrans.end(); ++ChiralSearch) {
+        for (ChiralSearch = _cistrans.begin(); ChiralSearch != _cistrans.end(); ChiralSearch++) {
           OBCisTransStereo::Config cfg = ChiralSearch->GetConfig();
           if (nbr_atom->GetId() == cfg.begin || nbr_atom->GetId() == cfg.end) {
             // I don't think I need to check whether it has a bond with atom
@@ -2684,7 +2678,7 @@ namespace OpenBabel {
       if (nbr_atom->HasDoubleBond())
         // Check whether the atom is a center in any CisTransStereo. If so,#
         // then this CisTransStereo takes precedence over any other
-        for (ChiralSearch = _cistrans.begin(); ChiralSearch != _cistrans.end(); ++ChiralSearch)
+        for (ChiralSearch = _cistrans.begin(); ChiralSearch != _cistrans.end(); ChiralSearch++)
         {
           OBCisTransStereo::Config cfg = ChiralSearch->GetConfig();
           if (atom->GetId() == cfg.begin || atom->GetId() == cfg.end) {
@@ -2718,7 +2712,7 @@ namespace OpenBabel {
         centeratom = nbr_atom->GetId();
       }
 
-      for (ChiralSearch = _unvisited_cistrans.begin(); ChiralSearch != _unvisited_cistrans.end(); ++ChiralSearch)
+      for (ChiralSearch = _unvisited_cistrans.begin(); ChiralSearch != _unvisited_cistrans.end(); ChiralSearch++)
       {
         OBCisTransStereo::Config cfg = ChiralSearch->GetConfig(OBStereo::ShapeU);
         lookup = std::find(cfg.refs.begin(), cfg.refs.end(), endatom);
@@ -2914,18 +2908,10 @@ namespace OpenBabel {
       writeExplicitHydrogen = true;
     }
 
-      //Output explicit hydrogens as such (for SMARTS) See line 3008 approx
-    if(_pconv) {
-      const char* hoption = _pconv->IsOption("h");
-      if (!bracketElement && hoption && atom->ExplicitHydrogenCount() > 0) {
-        bracketElement = true;
-        writeExplicitHydrogen = true;
-      }
-
-      // When h option has any parameter, always use only explicit H in H counts.
-      // Used in opisomorph to avoid implicit H being added when writing SMARTS [N+](=O)[O-]
-      if(hoption && *hoption)
-        writeExplicitHydrogen = true;
+    //Output as [CH3][CH3] rather than CC if -xh option has been specified
+    if (!bracketElement && _pconv && _pconv->IsOption("h") && atom->ExplicitHydrogenCount() > 0) {
+      bracketElement = true;
+      writeExplicitHydrogen = true;
     }
 
     if (!bracketElement) {
@@ -2949,7 +2935,7 @@ namespace OpenBabel {
         vector<pair<int,pair<OBAtom *,OBBond *> > >::iterator externalBond;
 
         if (externalBonds)
-          for(externalBond = externalBonds->begin();externalBond != externalBonds->end();++externalBond) {
+          for(externalBond = externalBonds->begin();externalBond != externalBonds->end();externalBond++) {
             if (externalBond->second.first == atom) {
               external = true;
               strcpy(symbol,"&");
@@ -3363,10 +3349,10 @@ namespace OpenBabel {
       //   - otherwise move it to the end
       // This section is skipped if sort_nbrs has only a single member, or if
       // we have already visited _endatom.
-      
+
       vector<OBAtom*> children;
       MyFindChildren(mol, children, _uatoms, _endatom);
-      
+
       vector<OBAtom*> front, end;
       for (vector<OBAtom *>::iterator it=sort_nbrs.begin(); it!=sort_nbrs.end(); ++it)
         if (std::find(children.begin(), children.end(), *it) == children.end() && *it != _endatom)
@@ -3503,7 +3489,7 @@ namespace OpenBabel {
           j = _vopen.begin();             // reset iterator
         }
         else
-          ++j;
+          j++;
       }
     }
 
@@ -3655,7 +3641,7 @@ namespace OpenBabel {
       // (We got the canonical ring-closure list earlier.)
       if (!vclose_bonds.empty()) {
         vector<OBBondClosureInfo>::iterator i;
-        for (i = vclose_bonds.begin();i != vclose_bonds.end();++i) {
+        for (i = vclose_bonds.begin();i != vclose_bonds.end();i++) {
           OBBond *bond = i->bond;
           OBAtom *nbr = bond->GetNbrAtom(atom);
           chiral_neighbors.push_back(nbr);
@@ -3684,7 +3670,7 @@ namespace OpenBabel {
     // Write ring-closure digits
     if (!vclose_bonds.empty()) {
       vector<OBBondClosureInfo>::iterator bci;
-      for (bci = vclose_bonds.begin();bci != vclose_bonds.end();++bci) {
+      for (bci = vclose_bonds.begin();bci != vclose_bonds.end();bci++) {
         if (!bci->is_open)
         { // Ring closure
           char bs[2] = {'\0', '\0'};
@@ -3872,7 +3858,7 @@ namespace OpenBabel {
       tokenize(split, splitlines.at(0),"/");
       aux_part = splitlines.at(1); // Use the normal labels
     }
-    else { 
+    else {
       tmp = splitlines.at(0).substr(rm_start);
       tokenize(split, tmp, "/");
       split.insert(split.begin(), "");
@@ -3912,7 +3898,7 @@ namespace OpenBabel {
             mult = 1;
           else
             mult = atoi(it->substr(0, it->size()-1).c_str());
-          new_canonical_labels.insert(new_canonical_labels.end(), 
+          new_canonical_labels.insert(new_canonical_labels.end(),
             canonical_labels.begin()+total, canonical_labels.begin()+total+mult);
           total += mult;
         }
@@ -3930,43 +3916,12 @@ namespace OpenBabel {
 
     // Flatten the canonical_labels
     for(vector<vector<int> >::iterator it=canonical_labels.begin(); it!=canonical_labels.end(); ++it) {
-      atom_order.insert(atom_order.end(), it->begin(), it->end());      
+      atom_order.insert(atom_order.end(), it->begin(), it->end());
     }
 
     return true;
   }
 
-  /**
-   * Helper function for getFragment below.
-   */
-  void addNbrs(OBBitVec &fragment, OBAtom *atom, const OBBitVec &mask)
-  {
-    FOR_NBORS_OF_ATOM (nbr, atom) {
-      if (!mask.BitIsSet(nbr->GetIdx()))
-        continue;
-      // skip visited atoms
-      if (fragment.BitIsSet(nbr->GetIdx()))
-        continue;
-      // add the neighbor atom to the fragment
-      fragment.SetBitOn(nbr->GetIdx());
-      // recurse...
-      addNbrs(fragment, &*nbr, mask);
-    }
-  }
-
-  /**
-   * Create an OBBitVec objects with bets set for the fragment consisting of all
-   * atoms for which there is a path to atom without going through skip. These
-   * fragment bitvecs are indexed by atom idx (i.e. OBAtom::GetIdx()).
-   */
-  OBBitVec getFragment(OBAtom *atom, const OBBitVec &mask)
-  {
-    OBBitVec fragment;
-    fragment.SetBitOn(atom->GetIdx());
-    // start the recursion
-    addNbrs(fragment, atom, mask);
-    return fragment;
-  }
 
   /***************************************************************************
    * FUNCTION: CreateFragCansmiString
@@ -4029,46 +3984,9 @@ namespace OpenBabel {
     // First, create a canonical ordering vector for the atoms.  Canonical
     // labels are zero indexed, corresponding to "atom->GetIdx()-1".
     if (_canonicalOutput) {
-
-      // Find the (dis)connected fragments.
-      OBBitVec visited;
-      std::vector<OBBitVec> fragments;
-      for (std::size_t i = 0; i < mol.NumAtoms(); ++i) {
-        if (!frag_atoms.BitIsSet(i+1) || visited.BitIsSet(i+1))
-          continue;
-        fragments.push_back(getFragment(mol.GetAtom(i+1), frag_atoms));
-        visited |= fragments.back();
-      }
-
-      // Determine symmetry classes for each disconnected fragment seperatly
-      symmetry_classes.resize(mol.NumAtoms());
-      for (std::size_t i = 0; i < fragments.size(); ++i) {
-        OBGraphSym gs(&mol, &(fragments[i]));
-        vector<unsigned int> tmp;
-        gs.GetSymmetry(tmp);
-
-        for (std::size_t j = 0; j < mol.NumAtoms(); ++j)
-          if (fragments[i].BitIsSet(j+1))
-            symmetry_classes[j] = tmp[j];
-      }
-
-      /*
       OBGraphSym gs(&mol, &frag_atoms);
       gs.GetSymmetry(symmetry_classes);
-      */
-
-      // Was a canonicalization timeout given?
-      unsigned int maxSeconds = 5;
-      const char *timeoutString = _pconv->IsOption("T");
-      if (timeoutString) {
-        std::stringstream ss(timeoutString);
-        if (!(ss >> maxSeconds)) {
-          obErrorLog.ThrowError(__FUNCTION__, "Canonicalization timeout should be a number", obWarning);
-          maxSeconds = 5;
-        }
-      }
-
-      CanonicalLabels(&mol, symmetry_classes, canonical_order, frag_atoms, maxSeconds);
+      CanonicalLabels(&mol, symmetry_classes, canonical_order, frag_atoms);
     }
     else {
       if (_pconv->IsOption("C")) {      // "C" == "anti-canonical form"
@@ -4218,6 +4136,18 @@ namespace OpenBabel {
   {
     bool canonical = pConv->IsOption("c")!=NULL;
 
+    // This is a hack to prevent recursion problems.
+    //  we still need to fix the underlying problem -GRH
+    if (mol.NumAtoms() > 1000) {
+      stringstream errorMsg;
+      errorMsg <<
+        "SMILES Conversion failed: Molecule is too large to convert."
+        "Open Babel is currently limited to 1000 atoms." << endl;
+      errorMsg << "  Molecule size: " << mol.NumAtoms() << " atoms " << endl;
+      obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obError);
+      return;
+    }
+
     OBMol2Cansmi m2s;
     m2s.Init(canonical, pConv);
     // GRH Added 2008-06-05
@@ -4255,20 +4185,16 @@ namespace OpenBabel {
 
     m2s.CreateFragCansmiString(mol, frag_atoms, iso, buffer);
 
-    // This atom order data is useful not just for canonical SMILES
     // Could also save canonical bond order if anyone desires
-    OBPairData *canData;
     if (!mol.HasData("SMILES Atom Order")) {
-      // Create new OBPairData
-      canData = new OBPairData;
+      // This atom order data is useful not just for canonical SMILES
+      OBPairData *canData = new OBPairData;
       canData->SetAttribute("SMILES Atom Order");
+      canData->SetValue(m2s.GetOutputOrder());
+      // cout << "SMILES_atom_order "<<m2s.GetOutputOrder() << "\n";
       canData->SetOrigin(OpenBabel::local);
       mol.SetData(canData);
-    } else {
-      // Recanonicalizing - update existing new OBPairData
-      canData = (OBPairData *) mol.GetData("SMILES Atom Order");
     }
-    canData->SetValue(m2s.GetOutputOrder());
   }
 
   bool SMIBaseFormat::GetInchifiedSMILESMolecule(OBMol *mol, bool useFixedHRecMet)
@@ -4296,7 +4222,6 @@ namespace OpenBabel {
     tokenize(vs, inchi);
     MolConv.SetInFormat(pInChIFormat);
     success = MolConv.ReadString(mol, vs.at(0));
-    mol->DeleteData("inchi"); // Tidy up this side-effect
     return success;
   }
 
@@ -4327,6 +4252,18 @@ namespace OpenBabel {
 
     char buffer[BUFF_SIZE];
     *buffer = '\0'; // clear the buffer
+
+    // This is a hack to prevent recursion problems.
+    //  we still need to fix the underlying problem (mainly chiral centers) -GRH
+    if (pmol->NumAtoms() > 1000) {
+      stringstream errorMsg;
+      errorMsg <<
+        "SMILES Conversion failed: Molecule is too large to convert."
+        "Open Babel is currently limited to 1000 atoms." << endl;
+      errorMsg << "  Molecule size: " << pmol->NumAtoms() << " atoms " << endl;
+      obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obError);
+      return(false);
+    }
 
     // If there is data attached called "SMILES_Fragment", then it's
     // an ascii OBBitVec, representing the atoms of a fragment.  The
@@ -4435,6 +4372,18 @@ namespace OpenBabel {
     char buffer[BUFF_SIZE];
     OBMol2Cansmi m2s;
 
+    // This is a hack to prevent recursion problems.
+    //  we still need to fix the underlying problem -GRH
+    if (mol.NumAtoms() > 1000)
+      {
+        stringstream errorMsg;
+        errorMsg << "SMILES Conversion failed: Molecule is too large to convert. Open Babel is currently limited to 1000 atoms." << endl;
+        errorMsg << "  Molecule size: " << mol.NumAtoms() << " atoms " << endl;
+        obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);
+        return(false);
+      }
+
+    // Write the SMILES in a FIX with canonical order
     m2s.Init(true, pConv);
     // From 2.1 code.
     m2s.CorrectAromaticAmineCharge(mol);

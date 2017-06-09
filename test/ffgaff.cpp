@@ -34,28 +34,20 @@ using namespace std;
 using namespace OpenBabel;
 
 #ifdef TESTDATADIR
-  string ctestdatadir = TESTDATADIR;
-  string cresults_file = ctestdatadir + "gaffresults.txt";
-  string cmolecules_file = ctestdatadir + "gaff.sdf";
+  string testdatadir = TESTDATADIR;
+  string results_file = testdatadir + "gaffresults.txt";
+  string molecules_file = testdatadir + "gaff.sdf";
 #else
-  string cresults_file = "files/gaffresults.txt";
-  string cmolecules_file = "files/gaff.sdf";
+  string results_file = "files/gaffresults.txt";
+  string molecules_file = "files/gaff.sdf";
 #endif
 
-void NGenerateEnergies();
+void GenerateEnergies();
 
-int ffgaff(int argc, char* argv[])
+int main(int argc,char *argv[])
 {
-  int defaultchoice = 1;
-  
-  int choice = defaultchoice;
-
-  if (argc > 1) {
-    if(sscanf(argv[1], "%d", &choice) != 1) {
-      printf("Couldn't parse that input as a number\n");
-      return -1;
-    }
-  }
+  // turn off slow sync with C-style output (we don't use it anyway).
+  std::ios::sync_with_stdio(false);
 
   // Define location of file formats for testing
   #ifdef FORMATDIR
@@ -64,26 +56,34 @@ int ffgaff(int argc, char* argv[])
     putenv(env);
   #endif
 
-  if (choice == 99)
+  if (argc != 1)
     {
-      NGenerateEnergies();
-      return 0;
+      if (strncmp(argv[1], "-g", 2))
+        {
+          cout << "Usage: ffgaff" << endl;
+          cout << "   Tests Open Babel GAFF force field implementation." << endl;
+          return 0;
+        }
+      else
+        {
+          GenerateEnergies();
+          return 0;
+        }
     }
-
 
   cout << "# Testing GAFF Force Field..." << endl;
 
   std::ifstream mifs;
-  if (!SafeOpen(mifs, cmolecules_file.c_str()))
+  if (!SafeOpen(mifs, molecules_file.c_str()))
     {
-      cout << "Bail out! Cannot read file " << cmolecules_file << endl;
+      cout << "Bail out! Cannot read file " << molecules_file << endl;
       return -1; // test failed
     }
 
   std::ifstream rifs;
-  if (!SafeOpen(rifs, cresults_file.c_str()))
+  if (!SafeOpen(rifs, results_file.c_str()))
     {
-      cout << "Bail out! Cannot read file " << cresults_file << endl;
+      cout << "Bail out! Cannot read file " << results_file << endl;
       return -1; // test failed
     }
 
@@ -129,7 +129,7 @@ int ffgaff(int argc, char* argv[])
 
       // compare the calculated energy to our reference data
       energy = pFF->Energy(false);
-      if (fabs(atof(buffer) - energy) > 1.0e-3)
+      if ( fabs(atof(buffer) - energy ) > 1.0e-3)
         {
           cout << "not ok " << ++currentTest << " # calculated energy incorrect "
                << " for molecule " << mol.GetTitle() << "\n";
@@ -156,14 +156,14 @@ int ffgaff(int argc, char* argv[])
   return 0;
 }
 
-void NGenerateEnergies()
+void GenerateEnergies()
 {
   std::ifstream ifs;
-  if (!SafeOpen(ifs, cmolecules_file.c_str()))
+  if (!SafeOpen(ifs, molecules_file.c_str()))
     return;
 
   std::ofstream ofs;
-  if (!SafeOpen(ofs, cresults_file.c_str()))
+  if (!SafeOpen(ofs, results_file.c_str()))
     return;
 
   OBMol mol;

@@ -1452,14 +1452,6 @@ namespace OpenBabel
           }
       }
 
-    int TotalCharge = mol.GetTotalCharge();
-    if(TotalCharge!=0)
-      xmlTextWriterWriteFormatAttribute(writer(), C_FORMALCHARGE, "%d", TotalCharge);
-
-    int TotalSpin = mol.GetTotalSpinMultiplicity();
-    if(TotalSpin!=1)
-      xmlTextWriterWriteFormatAttribute(writer(), C_SPINMULTIPLICITY, "%d", TotalSpin);
-
     if(_pxmlConv->IsOption("m") && _pxmlConv->GetOutputIndex()==1) //only on first molecule
       WriteMetadataList(mol);
 
@@ -2138,7 +2130,7 @@ namespace OpenBabel
 
     vector<OBGenericData*>::iterator k;
     vector<OBGenericData*> vdata = mol.GetData();
-    for (k = vdata.begin();k != vdata.end();++k)
+    for (k = vdata.begin();k != vdata.end();k++)
       {
         if  ((*k)->GetDataType() == OBGenericDataType::PairData
           && (*k)->GetOrigin()   != local //internal OBPairData is not written

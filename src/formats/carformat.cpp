@@ -2,7 +2,6 @@
 Copyright (C) 2000 by OpenEye Scientific Software, Inc.
 Some portions Copyright (C) 2001-2006 by Geoffrey R. Hutchison
 Some portions Copyright (C) 2004 by Chris Morley
-Some portions Copyright (C) 2013 by Schrodinger Inc.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -106,10 +105,9 @@ namespace OpenBabel
                 ifs.getline(buffer,BUFF_SIZE); // DATE
                 ifs.getline(buffer,BUFF_SIZE); // PBC a b c alpha beta gamma SG
 
-                string str = buffer;
                 // parse cell parameters
-                tokenize(vs,str," \t\r\n", 7);
-                if (vs.size() >= 7)
+                tokenize(vs,buffer);
+                if (vs.size() == 8)
                   {
                     //parse cell values
                     double A,B,C,Alpha,Beta,Gamma;
@@ -122,23 +120,7 @@ namespace OpenBabel
                     OBUnitCell *uc = new OBUnitCell;
                     uc->SetOrigin(fileformatInput);
                     uc->SetData(A, B, C, Alpha, Beta, Gamma);
-                    if(vs.size() > 7) 
-                      {
-                        string& space_group = vs[7];
-
-                        // Remove parentheses enclosing the space
-                        // group and remove white space from front
-                        // and back of string.
-                        Trim(space_group);
-                        if(space_group[0] == '(')
-                          {
-                            space_group.erase(0, 1);
-                            space_group.erase(space_group.size()-1); 
-                          }
-                        Trim(space_group);
-
-                        uc->SetSpaceGroup(space_group);
-                      }
+                    uc->SetSpaceGroup(vs[7]);
                     mol.SetData(uc);
                   }
               }

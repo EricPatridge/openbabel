@@ -60,7 +60,9 @@ namespace OpenBabel
   {
   public:
     FilteringInputStreambuf(
-      std::istream*        source = NULL) ;
+      std::streambuf*        source = NULL ,
+      bool                   deleteWhenFinished = false
+      ) ;
     virtual                 ~FilteringInputStreambuf()
     {
       //sync(); comment out so can be deleted in OBConversion destructor
@@ -73,9 +75,7 @@ namespace OpenBabel
     virtual std::streampos   seekoff(std::streamoff off, std::ios_base::seekdir way,
       std::ios_base::openmode which = std::ios_base::in | std::ios_base::out )
     {
-      setg(  &myBuffer , &myBuffer , &myBuffer  ) ; //ensure next character is from new position
-      mySource->seekg(off, way);
-      std::streampos ret = mySource->tellg();
+      std::streampos ret = mySource->pubseekoff(off, way, which);
 //      sync();
       return ret;
     };
@@ -83,24 +83,19 @@ namespace OpenBabel
     virtual std::streampos   seekpos(std::streampos sp,
       std::ios_base::openmode which = std::ios_base::in | std::ios_base::out )
     {
-      setg(  &myBuffer , &myBuffer , &myBuffer  ) ;
-      //slight hack - if mySource has read past the end, won't let us seek
-      //and there's no good way to propagate a clear to the original stream
-      mySource->clear();
-      mySource->seekg(sp);
-      std::streampos ret = mySource->tellg();
+      std::streampos ret = mySource->pubseekpos(sp, which);
 //      sync();
       return ret;
     };
 
     /// Returns current source.
-    std::istream* GetSource()const
+    std::streambuf* GetSource()const
     {
       return mySource;
     };
 
     ///Changes the source
-    void SetSource(std::istream* newsource)
+    void SetSource(std::streambuf* newsource)
     {
       mySource = newsource;
       setg( &myBuffer , &myBuffer , &myBuffer + 1 ) ;
@@ -109,16 +104,18 @@ namespace OpenBabel
 //    Extractor&   extractor() {return myExtractor;};
 
   private:
-    std::istream*          mySource ;
+    std::streambuf*          mySource ;
     Extractor                myExtractor ;
     char                     myBuffer ;
+    bool                     myDeleteWhenFinished ;
   } ;
 
 //*******************************************************
   template< class Extractor >
   FilteringInputStreambuf< Extractor >::FilteringInputStreambuf(
-    std::istream*        source )
-    : mySource(source)
+    std::streambuf*        source ,
+    bool                   deleteWhenFinished)
+    : mySource(source), myDeleteWhenFinished(deleteWhenFinished)
   {
     setg( &myBuffer , &myBuffer , &myBuffer ) ;
   }
@@ -154,11 +151,12 @@ namespace OpenBabel
     if ( mySource != NULL )
     {
       if ( gptr() < egptr() )
-      { //have read something but not provided it
-        mySource->putback(*gptr() ) ;
-        setg( &myBuffer , &myBuffer , &myBuffer ) ;
+      {
+        result = mySource->sputbackc( *gptr() ) ;
+        setg( NULL , NULL , NULL ) ;
       }
-      result = mySource->sync();
+      if ( mySource->pubsync() == EOF )
+          result = EOF ;
     }
     return result ;
   }
@@ -169,14 +167,14 @@ namespace OpenBabel
 class OBCONV LineEndingExtractor
 {
 public:
-  int operator()( std::istream& src )
+  int operator()( std::streambuf& src )
   {
-    int ch( src.get() ) ;
+    int ch( src.sbumpc() ) ;
     switch (ch)
     {
       case 13: //CR or CRLF
-        if(src.peek() == 10)
-          src.get(); //CRLF
+        if(src.sgetc() == 10)
+          src.sbumpc(); //CRLF
         //fall through
       case 10: //LF
         return '\n';
@@ -186,24 +184,6 @@ public:
     }
   }
   void finalize( std::streambuf& ) {}
-};
-
-/*! \class FilteringInputStream lineend.h <openbabel/lineend.h>
-  \brief A stream interface for FilteringInputStreambuf
-  */
-template <class Extractor >
-class  FilteringInputStream :
-    virtual private FilteringInputStreambuf<Extractor>,
-    public std::istream
-{
-public:
-    typedef std::istream& istream_reference;
-    typedef std::istream istream_type;
-
-    explicit FilteringInputStream(istream_reference istream):
-        FilteringInputStreambuf<Extractor>(&istream),std::istream(this) {}
-    virtual ~FilteringInputStream() {}
-
 };
 
 } //namespace

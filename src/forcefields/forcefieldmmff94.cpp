@@ -1384,7 +1384,7 @@ namespace OpenBabel
       n = 1;
       pi_electrons = 0;
       c60 = 0; // we have a special case to get c60 right (all atom type 37)
-      for(rj = (*ri)->_path.begin();rj != (*ri)->_path.end();++rj) { // for each ring atom
+      for(rj = (*ri)->_path.begin();rj != (*ri)->_path.end();rj++) { // for each ring atom
         index = *rj;
         ringatom = _mol.GetAtom(index);
 
@@ -1449,7 +1449,7 @@ namespace OpenBabel
       if (((pi_electrons == 6) && ((ringsize == 5) || (ringsize == 6)))
         || ((pi_electrons == 5) && (c60 == 5))) {
         // mark ring atoms as aromatic
-        for(rj = (*ri)->_path.begin();rj != (*ri)->_path.end();++rj) {
+        for(rj = (*ri)->_path.begin();rj != (*ri)->_path.end();rj++) {
           if (!_mol.GetAtom(*rj)->IsAromatic())
             done = true;
           _mol.GetAtom(*rj)->SetAromatic();
@@ -1577,13 +1577,13 @@ namespace OpenBabel
           }
           if (!alphaAtoms.size() && !betaAtoms.size()) {
             if (atom->IsCarbon()) {
-              bool c60 = true; // special case to ensure c60 is typed correctly -- Paolo Tosco
-              FOR_NBORS_OF_ATOM (nbr, atom) {
-                if (!(nbr->IsCarbon() && nbr->IsAromatic() && nbr->IsInRingSize(6)))
-                  c60 = false;
-              }
-              if (c60)
-                return 37; // correct atom type for c in c60 (all atoms symmetric)
+	      int c60 = 1; // special case to ensure c60 is typed correctly -- Paolo Tosco
+	      FOR_NBORS_OF_ATOM (nbr, atom) {
+	        if (!(nbr->IsCarbon() && nbr->IsAromatic() && nbr->IsInRingSize(6)))
+		  c60 = 0;
+	      }
+	      if (c60)
+	        return 37; // correct atom type for c in c60 (all atoms symmetric)
               // there is no S:, O:, or N:
               // this is the case for anions with only carbon and nitrogen in the ring
               return 78; // General carbon in 5-membered aromatic ring (C5)
@@ -1883,7 +1883,6 @@ namespace OpenBabel
       if (atom->GetValence() == 3) {
         int N2count = 0;
         int N3count = 0;
-        int N3fcharge = 0;
         oxygenCount = sulphurCount = doubleBondTo = 0;
 
         FOR_NBORS_OF_ATOM (nbr, atom) {
@@ -1900,7 +1899,6 @@ namespace OpenBabel
             }
           } else if (nbr->GetValence() == 3) {
             if (nbr->IsNitrogen()) {
-              N3fcharge += nbr->GetFormalCharge();
               N3count++;
             }
           } else if ((nbr->GetValence() == 2) && bond->IsDouble()) {
@@ -1909,8 +1907,7 @@ namespace OpenBabel
             }
           }
         }
-        if ((N3count >= 2) && (doubleBondTo == 7 || (!(doubleBondTo == 6) && atom->GetValence() == 3
-          && N3fcharge == 1)) && !N2count && !oxygenCount && !sulphurCount) {
+        if ((N3count >= 2) && (doubleBondTo == 7) && !N2count) {
           // N3==C--N3
           return 57; // Guanidinium carbon, Carbon in +N=C-N: resonance structures (CGD+, CNN+)
         }
@@ -2171,18 +2168,13 @@ namespace OpenBabel
       }
       // 2 neighbours
       if (atom->GetValence() == 2) {
-        if (atom->BOSum() >= 4) {
-          bool isNbrCarbon = false;
-          bool isBondTriple = false;
+        if (atom->BOSum() == 4) {
           FOR_NBORS_OF_ATOM (nbr, atom) {
-            if (!isNbrCarbon)
-              isNbrCarbon = nbr->IsCarbon();
             bond = _mol.GetBond(&*nbr, atom);
-            if (!isBondTriple)
-              isBondTriple = bond->IsTriple();
+            if (bond->IsTriple()) {
+              return 61; // Isonitrile nitrogen (NR%)
+            }
           }
-          if (isBondTriple && isNbrCarbon)
-            return 61; // Isonitrile nitrogen (NR%)
 
           return 53; // Central nitrogen in C=N=N or N=N=N (=N=)
         }
@@ -2239,15 +2231,10 @@ namespace OpenBabel
        	FOR_NBORS_OF_ATOM (nbr, atom) {
           bond = _mol.GetBond(&*nbr, atom);
           if (bond->IsTriple()) {
-            FOR_NBORS_OF_ATOM (nbrNbr, &*nbr) {
-              if (atom != &*nbrNbr && !(nbr->IsNitrogen()
-                && nbrNbr->IsNitrogen() && nbrNbr->GetValence() == 2)) {
-                return 42; // Triply bonded nitrogen (NSP)
-              }
-            }
+            return 42; // Triply bonded nitrogen (NSP)
           }
           if (nbr->IsNitrogen() && (nbr->GetValence() == 2)) {
-            return 47; // Terminal nitrogen in azido group (NAZT)
+            return 47; // Terminal nitrogen in azido or diazo group (NAZT)
           }
         }
       }
@@ -2343,19 +2330,8 @@ namespace OpenBabel
               // O--N
                 return 32; // Oxygen in N-oxides (ONX)
             } else {
-              // sometimes ONX bonds are labelled as double bonds
-              // (e.g. by MOE, noticed by Paolo Tosco)
-              int ndab = 0;
-              FOR_BONDS_OF_ATOM(bond2, &*nbr) {
-                if (bond2->GetBO() == 2 || bond2->GetBO() == 5)
-                  ndab++;
-              }
-              if (ndab + nbr->GetValence() == 5)
-                // O--N
-                return 32; // Oxygen in N-oxides (ONX)
-              else
-                // O==N
-                return 7; // Nitroso oxygen (O=N)
+              // O==N
+              return 7; // Nitroso oxygen (O=N)
             }
           }
           // O-?-S
@@ -3722,6 +3698,10 @@ namespace OpenBabel
         atom->SetPartialCharge(0.5);
         done = true;
         break;
+      case 56:
+        atom->SetPartialCharge(1.0/3.0);
+        done = true;
+        break;
       case 87:
       case 95:
       case 96:
@@ -3743,16 +3723,7 @@ namespace OpenBabel
       if (done)
         continue;
 
-      if (type == 56) {
-        int n_count = 0;
-        int temp_type;
-        FOR_ATOMS_OF_MOL (atom2, _mol) {
-          temp_type = atoi(atom2->GetType());
-          if (temp_type == 56 || temp_type == 81)
-            ++n_count;
-        }
-        atom->SetPartialCharge((double)((n_count + 1) / 3) / (double)n_count);
-      } else if (type == 32) {
+      if (type == 32) {
         int o_count = 0;
         bool sulfonamide = false;
         bool sulfone_s_c = false;
@@ -3801,7 +3772,7 @@ namespace OpenBabel
             }
           }
 
-          if (atoi(nbr->GetType()) == 77)
+          if (type == 77)
             atom->SetPartialCharge(-0.25); // O4CL
         }
       } else if (type == 61) {
@@ -3837,11 +3808,11 @@ namespace OpenBabel
         vector<int>::iterator rj;
         int n_count;
 
-        for (ri = vr.begin();ri != vr.end();++ri) { // for each ring
+        for (ri = vr.begin();ri != vr.end();ri++) { // for each ring
           n_count = 0;
 
           if ((*ri)->IsAromatic() && (*ri)->IsMember(&*atom) && ((*ri)->Size() == 5)) {
-            for(rj = (*ri)->_path.begin();rj != (*ri)->_path.end();++rj) // for each ring atom
+            for(rj = (*ri)->_path.begin();rj != (*ri)->_path.end();rj++) // for each ring atom
               if (_mol.GetAtom(*rj)->IsNitrogen())
                 n_count++;
 
@@ -3856,15 +3827,14 @@ namespace OpenBabel
         vr = _mol.GetSSSR();
         vector<OBRing*>::iterator ri;
         vector<int>::iterator rj;
-        for (ri = vr.begin();ri != vr.end();++ri) // for each ring
+        for (ri = vr.begin();ri != vr.end();ri++) // for each ring
           if ((*ri)->IsAromatic() && (*ri)->IsMember(&*atom) && ((*ri)->Size() == 5)) {
             int n_count = 0;
-            for(rj = (*ri)->_path.begin();rj != (*ri)->_path.end();++rj) // for each ring atom
+            for(rj = (*ri)->_path.begin();rj != (*ri)->_path.end();rj++) // for each ring atom
               if (_mol.GetAtom(*rj)->IsNitrogen() && (_mol.GetAtom(*rj)->GetValence() == 3))
                 n_count++;
 
-            if (n_count) // coverity defensive testing
-              atom->SetPartialCharge(1.0 / n_count); // NIM+
+            atom->SetPartialCharge(1.0 / n_count); // NIM+
 
             FOR_NBORS_OF_ATOM(nbr, &*atom)
               FOR_NBORS_OF_ATOM(nbr2, &*nbr)
@@ -4179,7 +4149,7 @@ namespace OpenBabel
 
       ni = 1;
       failed = false;
-      for (i = types.begin(); i != types.end();++i) {
+      for (i = types.begin(); i != types.end();i++) {
         if (ni > _mol.NumAtoms())
           continue;
 
@@ -4213,7 +4183,7 @@ namespace OpenBabel
       cout << "----------------------------------------" << endl;
 
       ni = 1;
-      for (di = fcharges.begin(); di != fcharges.end(); ++di) {
+      for (di = fcharges.begin(); di != fcharges.end(); di++) {
         if (ni > _mol.NumAtoms())
           continue;
 
@@ -4245,7 +4215,7 @@ namespace OpenBabel
       cout << "----------------------------------------" << endl;
 
       ni = 1;
-      for (di = pcharges.begin(); di != pcharges.end(); ++di) {
+      for (di = pcharges.begin(); di != pcharges.end(); di++) {
         if (ni > _mol.NumAtoms())
           continue;
 

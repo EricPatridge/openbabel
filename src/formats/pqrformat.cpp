@@ -186,18 +186,18 @@ namespace OpenBabel
   static double parseAtomCharge(char *buffer, OBMol &mol)
   // In PQR format, either:
   // Field name, atom number, atom name, residue name, residue number
-  //    x y z charge radius element
+  //    x y z charge radius
   // OR
-  // Field, atom number, atom name, chain id, residue number, X, Y, Z, chg, rad, ele
+  // Field, atom number, atom name, chain id, residue number, X, Y, Z, chg, rad
   {
     vector<string> vs;
     tokenize(vs,buffer);
 
     OBAtom *atom = mol.GetAtom(mol.NumAtoms());
 
-    if (vs.size() == 11)//add element, Zhixiong Zhao
+    if (vs.size() == 10)
       return atof(vs[8].c_str());
-    else if (vs.size() == 12)
+    else if (vs.size() == 11)
       return atof(vs[9].c_str());
 
     return 0.0;
@@ -210,9 +210,9 @@ namespace OpenBabel
 
     OBAtom *atom = mol.GetAtom(mol.NumAtoms());
 
-    if (vs.size() == 11)
+    if (vs.size() == 10)
       return atof(vs[9].c_str());
-    else if (vs.size() == 12)
+    else if (vs.size() == 11)
       return atof(vs[10].c_str());
 
     return 0.0;
@@ -497,7 +497,7 @@ namespace OpenBabel
         else
           {
             char tmp[10];
-            strncpy(tmp, type_name, 9); // make sure to null-terminate
+            strncpy(tmp, type_name, 10);
             snprintf(type_name, sizeof(type_name), " %-3s", tmp);
           }
 
@@ -506,7 +506,7 @@ namespace OpenBabel
             het = res->IsHetAtom(atom);
             snprintf(the_res,4,"%s",(char*)res->GetName().c_str());
             snprintf(type_name,5,"%s",(char*)res->GetAtomID(atom).c_str());
-            the_chain = res->GetChain();
+	    the_chain = res->GetChain();
 
             //two char. elements are on position 13 and 14 one char. start at 14
             if (strlen(etab.GetSymbol(atom->GetAtomicNum())) == 1)
@@ -514,7 +514,7 @@ namespace OpenBabel
                 if (strlen(type_name) < 4)
                   {
                     char tmp[16];
-                    strncpy(tmp, type_name, 15); // make sure to null-terminate
+                    strncpy(tmp, type_name, 16);
                     snprintf(padded_name, sizeof(padded_name), " %-3s", tmp);
                     strncpy(type_name,padded_name,4);
                     type_name[4] = '\0';
@@ -548,9 +548,7 @@ namespace OpenBabel
                  atom->GetY(),
                  atom->GetZ(),
                  atom->GetPartialCharge(),
-                 atom->HasData("Radius")//use atom radius data,Zhixiong Zhao
-				 	?atof(atom->GetData("Radius")->GetValue().c_str())
-					:etab.GetVdwRad(atom->GetAtomicNum()),
+                 etab.GetVdwRad(atom->GetAtomicNum()),
                  element_name);
         ofs << buffer;
       }

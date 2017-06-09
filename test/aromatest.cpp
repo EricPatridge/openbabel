@@ -36,66 +36,10 @@ extern "C" int strncasecmp(const char *s1, const char *s2, size_t n);
 using namespace std;
 using namespace OpenBabel;
 
-// Molecules aromatized in error (in the course of porting from SMARTS patterns)
-void NegativeTestCases(int &molCount, unsigned int &testCount)
+int main()
 {
-  // Check that not every atom is aromatic (i.e. negative test cases)
-  const char* smiles[] = { "c1ccc2[N+]=c3ccccc3=Nc2c1", // N radical found in eMolecules
-                           "N1S[SH+]C=C1",
-                           "S1C=[NH+]=[NH+]=C1",
-                           0 };
-  OBMol mol;
-  OBConversion conv;
-  conv.SetInFormat("smi");
-
-  for (int i = 0; smiles[i]; ++i) {
-    mol.Clear();
-    conv.ReadString(&mol, smiles[i]);
-    molCount++;
-    bool found_non_aromatic = false;
-    FOR_ATOMS_OF_MOL(atom, mol) {
-      if (atom->IsHydrogen())
-        continue;
-      if (!atom->IsAromatic()) {
-        found_non_aromatic = true;
-        break;
-      }
-    }
-    if (found_non_aromatic)
-      cout << "ok " << ++testCount << "\n";
-    else
-      cout << "not ok " << ++testCount << " # all atoms are aromatic in molecule " << molCount << " "
-      << mol.GetTitle() << "\n";
-  }
-
-  // I don't think Daylight's aromaticity model agrees with OB here, but if
-  // we ever change we can consider and update this test.
-  const char* smi = "Cc1ccc(cc1)[N+]1=[CH-]C(=NC(=O)OC)ON1";
-  mol.Clear();
-  conv.ReadString(&mol, smi);
-  FOR_ATOMS_OF_MOL(atom, mol) {
-    if (atom->GetFormalCharge() == -1) {
-      if (!atom->IsAromatic())
-        cout << "not ok " << ++testCount << "# [CH-] in testcase should be aromatic\n";
-      else
-        cout << "ok " << ++testCount << "\n";
-    }
-  }
-
-}
-
-int aromatest(int argc, char* argv[])
-{
-  int defaultchoice = 1;
-  
-  int choice = defaultchoice;
-
-  if (argc > 1) {
-    if(sscanf(argv[1], "%d", &choice) != 1) {
-      printf("Couldn't parse that input as a number\n");
-      return -1;
-    }
-  }
+  // turn off slow sync with C-style output (we don't use it anyway).
+  std::ios::sync_with_stdio(false);
 
   cout << endl << "# Testing aromaticity perception...  " << endl;
  
@@ -140,47 +84,32 @@ int aromatest(int argc, char* argv[])
       return (-1);
     }
   
-  int molCount;
-
-  switch(choice) {
-  case 1:
-    molCount = 0;
-    while(ifs.peek() != EOF && ifs.good())
-      {
-        mol.Clear();
-        conv.Read(&mol);
-        molCount++;
-        for (int N = 0; N < 2; ++N)
+  int molCount = 0;
+  while(ifs.peek() != EOF && ifs.good())
+    {
+      mol.Clear();
+      conv.Read(&mol);
+      molCount++;
+      
+      FOR_ATOMS_OF_MOL(atom, mol)
         {
-          if (N == 0)
-            mol.AddHydrogens();
-          else
-            mol.DeleteHydrogens();
-          FOR_ATOMS_OF_MOL(atom, mol)
-          {
-            if (atom->IsHydrogen())
-              continue;
+          if (atom->IsHydrogen())
+            continue;
 
-            if (atom->IsAromatic())
-              cout << "ok " << ++testCount << "\n";
-            else
+          if (atom->IsAromatic())
+            cout << "ok " << ++testCount << "\n";
+          else
             {
               cout << "not ok " << ++testCount << " # atom isn't aromatic!\n";
               cout << "# atom idx " << atom->GetIdx()
-                << " in molecule " << molCount << " "
-                << mol.GetTitle() << "\n";
+                   << " in molecule " << molCount << " "
+                   << mol.GetTitle() << "\n";
             }
-          }
-        }
-      } // while reading molecules
-
-    NegativeTestCases(molCount, testCount);
-
-    break;
-  default:
-    cout << "Test number " << choice << " does not exist!\n";
-    return -1;
-  }
+        }	
+    } // while reading molecules
+    
+  // output the number of tests run
+  cout << "1.." << testCount << endl;
 
   return(0);
 }

@@ -205,8 +205,6 @@ namespace OpenBabel
     for (k = _vrotor.begin();k != _vrotor.end();++k)
       delete [] k->first;
     _vrotor.clear();
-    _vrings.clear();
-    _vringTors.clear();
 
     //create the new list
     OBRotor *rotor;
@@ -228,57 +226,6 @@ namespace OpenBabel
         _vres.push_back(rotor->GetResolution());
       }
 
-    // if the rotor list has ring bonds, build up an index
-    if (rl.HasRingRotors()){
-      // go through rings
-      // for each step of the path, see if there's a matching rotor
-      vector<int> path;
-      int pSize;
-      vector<double> ringTorsions;
-      vector<int> ringRotors;
-      FOR_RINGS_OF_MOL(r, mol)
-      {
-        ringTorsions.clear();
-        ringRotors.clear();
-
-        pSize = r->Size();
-        if (pSize < 4)
-          continue; // not rotatable
-
-        path = r->_path;
-        for (int j = 0; j < pSize; ++j) {
-          double torsion = mol.GetTorsion(path[(j + pSize - 1) % pSize],
-                                       path[(j + pSize) % pSize],
-                                       path[(j + pSize + 1) % pSize],
-                                       path[(j + pSize + 2) % pSize]);
-          ringTorsions.push_back(torsion);
-
-          // now check to see if any of these things are rotors
-          int rotorIndex = -1; // not a rotor
-          OBBond *bond = mol.GetBond(path[(j + pSize) % pSize], path[(j + pSize + 1) % pSize]);
-          for (rotor = rl.BeginRotor(i);rotor;rotor = rl.NextRotor(i))
-            {
-              if (bond != rotor->GetBond())
-                continue; // no match at all
-
-              // Central bond matches, make sure 1..4 atoms are in the path
-              rotor->GetDihedralAtoms(ref);
-              if ( (ref[0] == path[(j + pSize - 1) % pSize] &&
-                    ref[3] == path[(j + pSize + 2) % pSize])
-                   ||
-                   (ref[3] == path[(j + pSize - 1) % pSize] &&
-                    ref[0] == path[(j + pSize + 2) % pSize]) ) {
-                rotorIndex = rotor->GetIdx();
-              }
-            } // end checking all the rotors
-          ringRotors.push_back(rotorIndex); // could be -1 if it's not rotatable
-        }
-
-        _vringTors.push_back(ringTorsions);
-        _vrings.push_back(ringRotors);
-      } // finished with the rings
-    } // if (ring rotors)
-
     vector<double>::iterator n;
     vector<vector<double> >::iterator m;
     for (m = _vres.begin();m != _vres.end();++m)
@@ -299,8 +246,6 @@ namespace OpenBabel
     for (k = _vrotor.begin();k != _vrotor.end();++k)
       delete [] k->first;
     _vrotor.clear();
-    _vrings.clear();
-    _vringTors.clear();
 
     //create the new list
     int i;
@@ -384,42 +329,6 @@ namespace OpenBabel
 
     if (arr.size() != (_vrotor.size() + 1))
       return; // wrong size key
-
-    // gotta check for weird ring torsion combinations
-    if (_vrings.size()) {
-      // go through each ring and update the possible torsions
-      for (unsigned int j = 0; j < _vrings.size(); ++j) {
-        vector<int> path = _vrings[j];
-        double torsionSum = 0.0;
-
-        // go around the loop and add up the torsions
-        for (unsigned int i = 0; i < path.size(); ++i) {
-          if (path[i] == -1) {
-            // not a rotor, use the fixed value
-            torsionSum += _vringTors[j][i];
-            continue;
-          }
-
-          // what angle are we trying to use with this key?
-          angle = _vres[ path[i] ][arr[ path[i]+1 ]]*res;
-          while (angle < 0.0)
-          	angle += 360.0;
-        	while (angle > 360.0)
-          	angle -= 360.0;
-
-          // update the ring torsion for this setting
-          _vringTors[j][i] = angle;
-          torsionSum += angle;
-        }
-
-        // if the sum of the ring torsions is not ~0, bad move
-        if (fabs(torsionSum) > 45.0) {
-          //          cerr << " Bad move! " << fabs(torsionSum) << endl;
-          return; // don't make the move
-        }
-        //        cerr << " Good move!" << endl;
-      }
-    }
 
     unsigned char *rot = new unsigned char [_vrotor.size()+1];
     rot[0] = (unsigned char)arr[0];
@@ -511,50 +420,19 @@ namespace OpenBabel
 
   //! Change the current coordinate set
   //! \since version 2.2
-  bool OBRotamerList::SetCurrentCoordinates(OBMol &mol, std::vector<int> arr)
+  void OBRotamerList::SetCurrentCoordinates(OBMol &mol, std::vector<int> arr)
   {
+    unsigned int i;
     double angle;
 
     if (arr.size() != (_vrotor.size() + 1))
-      return false; // wrong size key
+      return; // wrong size key
 
-    // gotta check for weird ring torsion combinations
-    if (_vrings.size()) {
-      // go through each ring and update the possible torsions
-      for (unsigned int j = 0; j < _vrings.size(); ++j) {
-        vector<int> path = _vrings[j];
-        double torsionSum = 0.0;
-
-        // go around the loop and add up the torsions
-        for (unsigned int i = 0; i < path.size(); ++i) {
-          if (path[i] == -1) {
-            // not a rotor, use the fixed value
-            torsionSum += _vringTors[j][i];
-            continue;
-          }
-
-          // what angle are we trying to use with this key?
-          angle = _vres[ path[i] ][arr[ path[i]+1 ]];
-          while (angle < 0.0)
-          	angle += 360.0;
-        	while (angle > 360.0)
-          	angle -= 360.0;
-
-          // update the ring torsion for this setting
-          _vringTors[j][i] = angle;
-          torsionSum += angle;
-        }
-
-        // if the sum of the ring torsions is not ~0, bad move
-        if (fabs(torsionSum) > 45.0) {
-          //          cerr << " Bad move!" << endl;
-          return false; // don't make the move
-        }
-      }
-    }
+    //    double *rot = new double [_vrotor.size()+1];
+    //    rot[0] = arr[0];
 
     double *c = mol.GetCoordinates();
-    for (unsigned int i = 0;i < _vrotor.size();++i)
+    for (i = 0;i < _vrotor.size();++i)
       {
 				if (arr[i+1] == -1) // skip this rotor
 					continue;
@@ -567,8 +445,6 @@ namespace OpenBabel
 	        SetRotorToAngle(c,_vrotor[i].first,angle,_vrotor[i].second);
 				} // set an angle
       } // for rotors
-
-    return true;
   }
 
   //Copies the coordinates in bc, NOT the pointers, into the object

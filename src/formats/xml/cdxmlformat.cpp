@@ -1,7 +1,6 @@
 /**********************************************************************
 Copyright (C) 2006 by Geoff Hutchison
 Portions Copyright (C) 2010 by Joerg Kurt Wegner
-Portions Copyright (C) 2012 by NextMove Software
 
 This file is part of the Open Babel project.
 For more information, see <http://openbabel.org/>
@@ -133,9 +132,6 @@ bool ChemDrawXMLFormat::DoElement(const string& name)
     buf = _pxmlConv->GetAttribute("Charge");
     if (buf.length())
       _tempAtom.SetFormalCharge(atoi(buf.c_str()));
-    buf = _pxmlConv->GetAttribute("Isotope");
-    if (buf.length())
-      _tempAtom.SetIsotope(atoi(buf.c_str()));
   }
   else if(name=="b")
   {
@@ -289,7 +285,6 @@ bool ChemDrawXMLFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)
   static const xmlChar C_CHARGE[]           = "Charge";
   static const xmlChar C_COORDS[]           = "p";
   static const xmlChar C_ELEMENT[]          = "Element";
-  static const xmlChar C_ISOTOPE[]          = "Isotope";
   static const xmlChar C_ORDER[]            = "Order";
   static const xmlChar C_BEGIN[]            = "B";
   static const xmlChar C_END[]              = "E";
@@ -347,11 +342,6 @@ bool ChemDrawXMLFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)
     if (n != 0)
     {
       xmlTextWriterWriteFormatAttribute(writer(), C_CHARGE , "%d", n);
-    }
-    n = patom->GetIsotope();
-    if (n != 0)
-    {
-      xmlTextWriterWriteFormatAttribute(writer(), C_ISOTOPE , "%d", n);
     }
     xmlTextWriterEndElement(writer());
   }

@@ -33,28 +33,20 @@ using namespace std;
 using namespace OpenBabel;
 
 #ifdef TESTDATADIR
-  string gtestdatadir = TESTDATADIR;
-  string gresults_file = gtestdatadir + "formularesults.txt";
-  string gsmilestypes_file = gtestdatadir + "attype.00.smi";
+  string testdatadir = TESTDATADIR;
+  string results_file = testdatadir + "formularesults.txt";
+  string smilestypes_file = testdatadir + "attype.00.smi";
 #else
-  string gresults_file = "files/formularesults.txt";
-  string gsmilestypes_file = "files/attype.00.smi";
+  string results_file = "files/formularesults.txt";
+  string smilestypes_file = "files/attype.00.smi";
 #endif
 
 void GenerateFormulaReference();
 
-int formula(int argc, char* argv[])
+int main(int argc,char *argv[])
 {
-  int defaultchoice = 1;
-  
-  int choice = defaultchoice;
-
-  if (argc > 1) {
-    if(sscanf(argv[1], "%d", &choice) != 1) {
-      printf("Couldn't parse that input as a number\n");
-      return -1;
-    }
-  }
+  // turn off slow sync with C-style output (we don't use it anyway).
+  std::ios::sync_with_stdio(false);
 
   // Define location of file formats for testing
 #ifdef FORMATDIR
@@ -65,10 +57,19 @@ int formula(int argc, char* argv[])
 
   bool check = true;
   string filename;
-  if (choice == 99)
+  if (argc != 1)
     {
-      GenerateFormulaReference();
-      return 0;
+      if (strncmp(argv[1], "-g", 2))
+        {
+          // generate formulas for this file
+          check = false;
+          filename = argv[1];
+        }
+      else
+        {
+          GenerateFormulaReference();
+          return 0;
+        }
     }
 
   cout << "# Testing molecular formulas..." << endl;
@@ -81,7 +82,7 @@ int formula(int argc, char* argv[])
   unsigned int currentTest = 0;
 
   if (check) {
-    filename = gsmilestypes_file;
+    filename = smilestypes_file;
   }
 
   if (!SafeOpen(mifs, filename.c_str()))
@@ -94,9 +95,9 @@ int formula(int argc, char* argv[])
 
   std::ifstream rifs;
   if (check) {
-    if (!SafeOpen(rifs, gresults_file.c_str()))
+    if (!SafeOpen(rifs, results_file.c_str()))
       {
-        cout << "Bail out! Cannot read file " << gresults_file << endl;
+        cout << "Bail out! Cannot read file " << results_file << endl;
         return -1; // test failed
       }
   }
@@ -213,11 +214,11 @@ int formula(int argc, char* argv[])
 void GenerateFormulaReference()
 {
   std::ifstream ifs;
-  if (!SafeOpen(ifs, gsmilestypes_file.c_str()))
+  if (!SafeOpen(ifs, smilestypes_file.c_str()))
     return;
 
   std::ofstream ofs;
-  if (!SafeOpen(ofs, gresults_file.c_str()))
+  if (!SafeOpen(ofs, results_file.c_str()))
     return;
 
   OBMol mol;

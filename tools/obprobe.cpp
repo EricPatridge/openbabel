@@ -157,5 +157,5 @@ int main(int argc,char **argv)
 
   } // end for loop
 
-  return(0);
+  return(1);
 }

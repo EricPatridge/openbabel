@@ -38,7 +38,7 @@ public:
   {
     OBBase* pOb = pConv->GetChemObject();
 
-    OBMol* pMolCopy = NULL;
+    OBMol* pMolCopy;
     if(_pOrigConv)
     {
       //Need to copy pOb. But currently OBBase does not have a virtual Clone() function.
@@ -63,23 +63,18 @@ public:
       _pExtraConv->SetOutputIndex(pConv->GetOutputIndex()-2);
       if(!_pExtraConv->AddChemObject(pOb))
         _pExtraConv = NULL; //error on extra output stops only it
-      else // need "else" or we'll dereference a NULL
-        _pExtraConv->SetLast(pConv->IsLast());
+      _pExtraConv->SetLast(pConv->IsLast());
     }
 
     if(pConv->IsLast())
     {
-      if (_pOrigConv && pMolCopy != NULL) {
-        _pOrigConv->AddChemObject(pMolCopy); //dummy add to empty queue
-        pConv->SetOutFormat(_pOrigConv->GetOutFormat()); //ReportNumberConverted() uses this at end
-      }
-
+      _pOrigConv->AddChemObject(pMolCopy); //dummy add to empty queue
       if(_pExtraConv)
       {
         _pExtraConv->AddChemObject(pOb);  //dummy add to empty queue
         delete _pExtraConv->GetOutStream(); //filestream
       }
-
+      pConv->SetOutFormat(_pOrigConv->GetOutFormat()); //ReportNumberConverted() uses this at end
       delete _pOrigConv;
       delete _pExtraConv;
       _pOrigConv=NULL;

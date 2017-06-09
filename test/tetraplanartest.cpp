@@ -13,7 +13,7 @@ using namespace OpenBabel;
 //           4
 
 
-int tetraplanartest(int argc, char* argv[])
+void test_ToConfig()
 {
   OBCisTransStereo::Config cfg;
 
@@ -104,6 +104,13 @@ int tetraplanartest(int argc, char* argv[])
   OB_ASSERT( shapeU.refs[2] == 4 );
   OB_ASSERT( shapeU.refs[3] == 5 );
   OB_ASSERT( shapeU.shape == OBStereo::ShapeU );
+
+
+}
+
+int main()
+{
+  test_ToConfig();
 
   return 0;
 }

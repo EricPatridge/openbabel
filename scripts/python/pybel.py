@@ -1,10 +1,10 @@
-# -*. coding: utf-8 -*-
-# Copyright (c) 2008-2012, Noel O'Boyle; 2012, Adrià Cereto-Massagué
-# All rights reserved.
-#
-# This file is part of Cinfony.
-# The contents are covered by the terms of the GPL v2 license
-# which is included in the file LICENSE_GPLv2.txt.
+#-*. coding: utf-8 -*-
+## Copyright (c) 2008-2012, Noel O'Boyle; 2012, Adrià Cereto-Massagué
+## All rights reserved.
+##
+##  This file is part of Cinfony.
+##  The contents are covered by the terms of the GPL v2 license
+##  which is included in the file LICENSE_GPLv2.txt.
 
 """
 pybel - A Cinfony module for accessing Open Babel
@@ -19,11 +19,9 @@ Global variables:
 """
 
 import sys
+import math
 import os.path
 import tempfile
-import json
-import uuid
-import xml.etree.ElementTree as ET
 
 if sys.platform[:4] == "java":
     import org.openbabel as ob
@@ -37,13 +35,14 @@ elif sys.platform[:3] == "cli":
     import clr
     clr.AddReference('System.Windows.Forms')
     clr.AddReference('System.Drawing')
-
-    from System.Windows.Forms import Application, DockStyle, Form, PictureBox
-    from System.Windows.Forms import PictureBoxSizeMode
+     
+    from System.Windows.Forms import (
+        Application, DockStyle, Form, PictureBox, PictureBoxSizeMode
+        )
     from System.Drawing import Image, Size
 
     _obdotnet = os.environ["OBDOTNET"]
-    if _obdotnet[0] == '"':  # Remove trailing quotes
+    if _obdotnet[0] == '"': # Remove trailing quotes
         _obdotnet = _obdotnet[1:-1]
     clr.AddReferenceToFileAndPath(os.path.join(_obdotnet, "OBDotNet.dll"))
     import OpenBabel as ob
@@ -56,23 +55,25 @@ else:
         import Tkinter as tk
         import Image as PIL
         import ImageTk as piltk
-    except ImportError:  # pragma: no cover
+    except ImportError: #pragma: no cover
         tk = None
-
 
 def _formatstodict(list):
     if sys.platform[:4] == "java":
         list = [list.get(i) for i in range(list.size())]
-    broken = [x.replace("[Read-only]", "").replace("[Write-only]", "").split(
-              " -- ") for x in list]
-    broken = [(x, y.strip()) for x, y in broken]
+    broken = [x.replace("[Read-only]", "").replace("[Write-only]","").split(" -- ") for x in list]
+    broken = [(x,y.strip()) for x,y in broken]
     return dict(broken)
-
+_obconv = ob.OBConversion()
+_builder = ob.OBBuilder()
+informats = _formatstodict(_obconv.GetSupportedInputFormat())
+"""A dictionary of supported input formats"""
+outformats = _formatstodict(_obconv.GetSupportedOutputFormat())
+"""A dictionary of supported output formats"""
 
 def _getplugins(findplugin, names):
-    return dict([(x, findplugin(x)) for x in names if findplugin(x)])
-
-
+    plugins = dict([(x, findplugin(x)) for x in names if findplugin(x)])
+    return plugins
 def _getpluginnames(ptype):
     if sys.platform[:4] == "cli":
         plugins = ob.VectorString()
@@ -81,39 +82,20 @@ def _getpluginnames(ptype):
     ob.OBPlugin.ListAsVector(ptype, None, plugins)
     if sys.platform[:4] == "java":
         plugins = [plugins.get(i) for i in range(plugins.size())]
-    return [x.split()[0] for x in plugins if x.strip()]
-
-_obconv = ob.OBConversion()
-_builder = ob.OBBuilder()
-
-informats = _formatstodict(_obconv.GetSupportedInputFormat())
-"""A dictionary of supported input formats"""
-outformats = _formatstodict(_obconv.GetSupportedOutputFormat())
-"""A dictionary of supported output formats"""
+    return [x.split()[0] for x in plugins]
 
 descs = _getpluginnames("descriptors")
 """A list of supported descriptors"""
 _descdict = _getplugins(ob.OBDescriptor.FindType, descs)
-
 fps = [_x.lower() for _x in _getpluginnames("fingerprints")]
 """A list of supported fingerprint types"""
 _fingerprinters = _getplugins(ob.OBFingerprint.FindFingerprint, fps)
-
 forcefields = [_x.lower() for _x in _getpluginnames("forcefields")]
 """A list of supported forcefields"""
 _forcefields = _getplugins(ob.OBForceField.FindType, forcefields)
-
-charges = [_x.lower() for _x in _getpluginnames("charges")]
-"""A list of supported charge models"""
-_charges = _getplugins(ob.OBChargeModel.FindType, charges)
-
 operations = _getpluginnames("ops")
 """A list of supported operations"""
 _operations = _getplugins(ob.OBOp.FindType, operations)
-
-ipython_3d = False
-"""Toggles 2D vs 3D molecule representations in IPython notebook"""
-
 
 def readfile(format, filename, opt=None):
     """Iterate over the molecules in a file.
@@ -145,12 +127,12 @@ def readfile(format, filename, opt=None):
     >>> print atomtotal
     43
     """
-    if opt is None:
+    if opt == None:
         opt = {}
     obconversion = ob.OBConversion()
     formatok = obconversion.SetInFormat(format)
     for k, v in opt.items():
-        if v is None:
+        if v == None:
             obconversion.AddOption(k, obconversion.INOPTIONS)
         else:
             obconversion.AddOption(k, obconversion.INOPTIONS, str(v))
@@ -158,16 +140,14 @@ def readfile(format, filename, opt=None):
         raise ValueError("%s is not a recognised Open Babel format" % format)
     if not os.path.isfile(filename):
         raise IOError("No such file: '%s'" % filename)
-
     def filereader():
         obmol = ob.OBMol()
-        notatend = obconversion.ReadFile(obmol, filename)
+        notatend = obconversion.ReadFile(obmol,filename)
         while notatend:
             yield Molecule(obmol)
             obmol = ob.OBMol()
             notatend = obconversion.Read(obmol)
     return filereader()
-
 
 def readstring(format, string, opt=None):
     """Read in a molecule from a string.
@@ -188,7 +168,7 @@ def readstring(format, string, opt=None):
     >>> len(mymol.atoms)
     5
     """
-    if opt is None:
+    if opt == None:
         opt = {}
 
     obmol = ob.OBMol()
@@ -198,7 +178,7 @@ def readstring(format, string, opt=None):
     if not formatok:
         raise ValueError("%s is not a recognised Open Babel format" % format)
     for k, v in opt.items():
-        if v is None:
+        if v == None:
             obconversion.AddOption(k, obconversion.INOPTIONS)
         else:
             obconversion.AddOption(k, obconversion.INOPTIONS, str(v))
@@ -208,7 +188,6 @@ def readstring(format, string, opt=None):
         raise IOError("Failed to convert '%s' to format '%s'" % (
             string, format))
     return Molecule(obmol)
-
 
 class Outputfile(object):
     """Represent a file to which *output* is to be sent.
@@ -234,30 +213,25 @@ class Outputfile(object):
        write(molecule)
        close()
     """
-
     def __init__(self, format, filename, overwrite=False, opt=None):
-        if opt is None:
+        if opt == None:
             opt = {}
         self.format = format
         self.filename = filename
         if not overwrite and os.path.isfile(self.filename):
-            raise IOError(
-                "%s already exists. Use 'overwrite=True' to overwrite it." %
-                self.filename)
+            raise IOError("%s already exists. Use 'overwrite=True' to overwrite it." % self.filename)
 
         self.obConversion = ob.OBConversion()
         formatok = self.obConversion.SetOutFormat(self.format)
         if not formatok:
-            raise ValueError("%s is not a recognised Open Babel format" %
-                             format)
-        if filename and filename.split('.')[-1] == 'gz':
-            self.obConversion.AddOption('z', self.obConversion.GENOPTIONS)
+            raise ValueError("%s is not a recognised Open Babel format" % format)
+
         for k, v in opt.items():
-            if v is None:
+            if v == None:
                 self.obConversion.AddOption(k, self.obConversion.OUTOPTIONS)
             else:
                 self.obConversion.AddOption(k, self.obConversion.OUTOPTIONS, str(v))
-        self.total = 0  # The total number of molecules written to the file
+        self.total = 0 # The total number of molecules written to the file
 
     def write(self, molecule):
         """Write a molecule to the output file.
@@ -268,7 +242,7 @@ class Outputfile(object):
         if not self.filename:
             raise IOError("Outputfile instance is closed.")
 
-        if self.total == 0:
+        if self.total==0:
             self.obConversion.WriteFile(molecule.OBMol, self.filename)
         else:
             self.obConversion.Write(molecule.OBMol)
@@ -278,7 +252,6 @@ class Outputfile(object):
         """Close the Outputfile to further writing."""
         self.obConversion.CloseOutFile()
         self.filename = None
-
 
 class Molecule(object):
     """Represent a Pybel Molecule.
@@ -292,8 +265,8 @@ class Molecule(object):
     (refer to the Open Babel library documentation for more info).
 
     Methods:
-       addh(), calcfp(), calcdesc(), draw(), localopt(), make3D(),
-       calccharges(), removeh(), write()
+       addh(), calcfp(), calcdesc(), draw(), localopt(), make3D(), removeh(),
+       write()
 
     The underlying Open Babel molecule can be accessed using the attribute:
        OBMol
@@ -314,60 +287,30 @@ class Molecule(object):
 
     @property
     def atoms(self):
-        return [Atom(self.OBMol.GetAtom(i + 1))
-                for i in range(self.OBMol.NumAtoms())]
-
+        return [ Atom(self.OBMol.GetAtom(i+1)) for i in range(self.OBMol.NumAtoms()) ]
     @property
-    def residues(self):
-        return [Residue(res) for res in ob.OBResidueIter(self.OBMol)]
-
+    def charge(self): return self.OBMol.GetTotalCharge()
     @property
-    def charge(self):
-        return self.OBMol.GetTotalCharge()
-
+    def conformers(self): return self.OBMol.GetConformers()
     @property
-    def conformers(self):
-        return self.OBMol.GetConformers()
-
+    def data(self): return MoleculeData(self.OBMol)
     @property
-    def data(self):
-        return MoleculeData(self.OBMol)
-
+    def dim(self): return self.OBMol.GetDimension()
     @property
-    def dim(self):
-        return self.OBMol.GetDimension()
-
+    def energy(self): return self.OBMol.GetEnergy()
     @property
-    def energy(self):
-        return self.OBMol.GetEnergy()
-
+    def exactmass(self): return self.OBMol.GetExactMass()
     @property
-    def exactmass(self):
-        return self.OBMol.GetExactMass()
-
+    def formula(self): return self.OBMol.GetFormula()
     @property
-    def formula(self):
-        return self.OBMol.GetFormula()
-
+    def molwt(self): return self.OBMol.GetMolWt()
     @property
-    def molwt(self):
-        return self.OBMol.GetMolWt()
-
+    def spin(self): return self.OBMol.GetTotalSpinMultiplicity()
     @property
-    def spin(self):
-        return self.OBMol.GetTotalSpinMultiplicity()
-
-    @property
-    def sssr(self):
-        return self.OBMol.GetSSSR()
-
-    def _gettitle(self):
-        return self.OBMol.GetTitle()
-
-    def _settitle(self, val):
-        self.OBMol.SetTitle(val)
+    def sssr(self): return self.OBMol.GetSSSR()
+    def _gettitle(self): return self.OBMol.GetTitle()
+    def _settitle(self, val): self.OBMol.SetTitle(val)
     title = property(_gettitle, _settitle)
-
     @property
     def unitcell(self):
         unitcell_index = _obconsts.UnitCell
@@ -381,11 +324,6 @@ class Molecule(object):
                 return unitcell.Downcast[ob.OBUnitCell]()
         else:
             raise AttributeError("Molecule has no attribute 'unitcell'")
-
-    @property
-    def clone(self):
-        return Molecule(ob.OBMol(self.OBMol))
-
     @property
     def _exchange(self):
         if self.OBMol.HasNonZeroCoords():
@@ -401,37 +339,6 @@ class Molecule(object):
                print atom
         """
         return iter(self.atoms)
-
-    def _repr_svg_(self):
-        """For IPython notebook, renders 2D pybel.Molecule SVGs."""
-
-        # Returning None defers to _repr_javascript_
-        if ipython_3d:
-            return None
-
-        # Open babel returns a nested svg, which IPython unpacks and treats as
-        # two SVGs, messing with the display location. This parses out the
-        # inner svg before handing over to IPython.
-        namespace = "http://www.w3.org/2000/svg"
-        ET.register_namespace("", namespace)
-        obsvg = self.clone.write("svg")
-        tree = ET.fromstring(obsvg)
-        svg = tree.find("{{{ns}}}g/{{{ns}}}svg".format(ns=namespace))
-        return ET.tostring(svg).decode("utf-8")
-
-    def _repr_html_(self):
-        """For IPython notebook, renders 3D pybel.Molecule webGL objects."""
-
-        # Returning None defers to _repr_svg_
-        if not ipython_3d:
-            return None
-
-        try:
-            import imolecule
-        except ImportError:
-            raise ImportError("Cannot import 3D rendering. Please install "
-                              "with `pip install imolecule`.")
-        return imolecule.draw(self.clone, format="pybel", display_html=False)
 
     def calcdesc(self, descnames=[]):
         """Calculate descriptor values.
@@ -450,8 +357,7 @@ class Molecule(object):
             try:
                 desc = _descdict[descname]
             except KeyError:
-                raise ValueError(("%s is not a recognised Open Babel "
-                                  "descriptor type") % descname)
+                raise ValueError("%s is not a recognised Open Babel descriptor type" % descname)
             ans[descname] = desc.Predict(self.OBMol)
         return ans
 
@@ -471,33 +377,9 @@ class Molecule(object):
         try:
             fingerprinter = _fingerprinters[fptype]
         except KeyError:
-            raise ValueError(
-                "%s is not a recognised Open Babel Fingerprint type" % fptype)
+            raise ValueError("%s is not a recognised Open Babel Fingerprint type" % fptype)
         fingerprinter.GetFingerprint(self.OBMol, fp)
         return Fingerprint(fp)
-
-    def calccharges(self, model="mmff94"):
-        """Estimates atomic partial charges in the molecule.
-
-        Optional parameters:
-           model -- default is "mmff94". See the charges variable for a list
-                    of available charge models (in shell, `obabel -L charges`)
-
-        This method populates the `partialcharge` attribute of each atom
-        in the molecule in place.
-        """
-        model = model.lower()
-        try:
-            charge_model = _charges[model]
-        except KeyError:
-            raise ValueError(
-                "%s is not a recognised Open Babel Charge Model type" % model)
-        success = charge_model.ComputeCharges(self.OBMol)
-        if not success:
-            errors = ob.obErrorLog.GetMessagesOfLevel(ob.obError)
-            error = errors[-1] if errors else "Molecule failed to charge."
-            raise Exception(error)
-        return [atom.partialcharge for atom in self.atoms]
 
     def write(self, format="smi", filename=None, overwrite=False, opt=None):
         """Write the molecule to a file or return a string.
@@ -518,26 +400,22 @@ class Molecule(object):
         To write multiple molecules to the same file you should use
         the Outputfile class.
         """
-        if opt is None:
+        if opt == None:
             opt = {}
         obconversion = ob.OBConversion()
         formatok = obconversion.SetOutFormat(format)
         if not formatok:
-            raise ValueError("%s is not a recognised Open Babel format" %
-                             format)
-        if filename and filename.split('.')[-1] == 'gz':
-            obconversion.AddOption('z', self.obConversion.GENOPTIONS)
+            raise ValueError("%s is not a recognised Open Babel format" % format)
         for k, v in opt.items():
-            if v is None:
+            if v == None:
                 obconversion.AddOption(k, obconversion.OUTOPTIONS)
             else:
                 obconversion.AddOption(k, obconversion.OUTOPTIONS, str(v))
 
         if filename:
             if not overwrite and os.path.isfile(filename):
-                raise IOError(("%s already exists. Use 'overwrite=True' to "
-                               "overwrite it.") % filename)
-            obconversion.WriteFile(self.OBMol, filename)
+                raise IOError("%s already exists. Use 'overwrite=True' to overwrite it." % filename)
+            obconversion.WriteFile(self.OBMol,filename)
             obconversion.CloseOutFile()
         else:
             return obconversion.WriteString(self.OBMol)
@@ -564,7 +442,17 @@ class Molecule(object):
         ff.SteepestDescent(steps)
         ff.GetCoordinates(self.OBMol)
 
-    def make3D(self, forcefield="mmff94", steps=50):
+##    def globalopt(self, forcefield="MMFF94", steps=1000):
+##        if not (self.OBMol.Has2D() or self.OBMol.Has3D()):
+##            self.make3D()
+##        self.localopt(forcefield, 250)
+##        ff = _forcefields[forcefield]
+##        numrots = self.OBMol.NumRotors()
+##        if numrots > 0:
+##            ff.WeightedRotorSearch(numrots, int(math.log(numrots + 1) * steps))
+##        ff.GetCoordinates(self.OBMol)
+
+    def make3D(self, forcefield = "mmff94", steps = 50):
         """Generate 3D coordinates.
 
         Optional parameters:
@@ -590,10 +478,6 @@ class Molecule(object):
         """Remove hydrogens."""
         self.OBMol.DeleteHydrogens()
 
-    def convertdbonds(self):
-        """Convert Dative Bonds."""
-        self.OBMol.ConvertDativeBonds()
-
     def __str__(self):
         return self.write()
 
@@ -611,13 +495,11 @@ class Molecule(object):
 
         Tkinter and Python Imaging Library are required for image display.
         """
-        obconversion = ob.OBConversion()
-        formatok = obconversion.SetOutFormat("_png2")
-        if not formatok:
-            raise ImportError("PNG depiction support not found. You should "
-                              "compile Open Babel with support for Cairo. See "
-                              "installation instructions for more "
-                              "information.")
+        if not "png2" in outformats:
+            errormessage = ("PNG output format not found. You should compile "
+                            "Open Babel with PNG support. See installation "
+                            "instructions for more information.")
+            raise ImportError(errormessage)
 
         # Need to copy to avoid removing hydrogens from self
         workingmol = Molecule(ob.OBMol(self.OBMol))
@@ -625,65 +507,61 @@ class Molecule(object):
 
         if not usecoords:
             _operations['gen2D'].Do(workingmol.OBMol)
-        if update:
+        if update == True:
             if workingmol.OBMol.NumAtoms() != self.OBMol.NumAtoms():
-                raise RuntimeError("It is not possible to update the original "
-                                   "molecule with the calculated coordinates, "
-                                   "as the original molecule contains "
-                                   "explicit hydrogens for which no "
-                                   "coordinates have been calculated.")
+                errormessage = ("It is not possible to update the original molecule "
+                                "with the calculated coordinates, as the original "
+                                "molecule contains explicit hydrogens for which no "
+                                "coordinates have been calculated.")
+                raise RuntimeError(errormessage)
             else:
                 for i in range(workingmol.OBMol.NumAtoms()):
-                    self.OBMol.GetAtom(i + 1).SetVector(
-                        workingmol.OBMol.GetAtom(i + 1).GetVector())
+                    self.OBMol.GetAtom(i + 1).SetVector(workingmol.OBMol.GetAtom(i + 1).GetVector())
+
         if filename:
             filedes = None
         else:
             if sys.platform[:3] == "cli" and show:
-                raise RuntimeError("It is only possible to show the molecule "
-                                   "if you provide a filename. The reason for "
-                                   "this is that I kept having problems "
-                                   "when using temporary files.")
-
+                errormessage = ("It is only possible to show the molecule if you "
+                                "provide a filename. The reason for this is that I kept "
+                                "having problems when using temporary files.")
+                raise RuntimeError(errormessage)
+            
             filedes, filename = tempfile.mkstemp()
 
-        workingmol.write("_png2", filename=filename, overwrite=True)
+        workingmol.write("png2", filename=filename, overwrite=True)
 
         if show:
             if sys.platform[:4] == "java":
                 image = javax.imageio.ImageIO.read(java.io.File(filename))
                 frame = javax.swing.JFrame(visible=1)
-                frame.getContentPane().add(
-                    javax.swing.JLabel(javax.swing.ImageIcon(image)))
-                frame.setSize(300, 300)
-                frame.setDefaultCloseOperation(
-                    javax.swing.WindowConstants.DISPOSE_ON_CLOSE)
+                frame.getContentPane().add(javax.swing.JLabel(javax.swing.ImageIcon(image)))
+                frame.setSize(300,300)
+                frame.setDefaultCloseOperation(javax.swing.WindowConstants.DISPOSE_ON_CLOSE)
                 frame.show()
             elif sys.platform[:3] == "cli":
                 form = _MyForm()
                 form.setup(filename, self.title)
-                Application.Run(form)
+                Application.Run(form)                
             else:
                 if not tk:
-                    raise ImportError("Tkinter or Python Imaging Library not "
-                                      "found, but is required for image "
-                                      "display. See installation instructions "
-                                      "for more information.")
+                    errormessage = ("Tkinter or Python Imaging "
+                                    "Library not found, but is required for image "
+                                    "display. See installation instructions for "
+                                    "more information.")
+                    raise ImportError(errormessage)
                 root = tk.Tk()
                 root.title((hasattr(self, "title") and self.title)
                            or self.__str__().rstrip())
-                frame = tk.Frame(root, colormap="new",
-                                 visual='truecolor').pack()
+                frame = tk.Frame(root, colormap="new", visual='truecolor').pack()
                 image = PIL.open(filename)
                 imagedata = piltk.PhotoImage(image)
-                tk.Label(frame, image=imagedata).pack()
-                tk.Button(root, text="Close", command=root.destroy).pack(
-                    fill=tk.X)
+                label = tk.Label(frame, image=imagedata).pack()
+                quitbutton = tk.Button(root, text="Close", command=root.destroy).pack(fill=tk.X)
                 root.mainloop()
         if filedes:
             os.close(filedes)
             os.remove(filename)
-
 
 class Atom(object):
     """Represent a Pybel atom.
@@ -694,7 +572,7 @@ class Atom(object):
     Attributes:
        atomicmass, atomicnum, cidx, coords, coordidx, exactmass,
        formalcharge, heavyvalence, heterovalence, hyb, idx,
-       implicitvalence, isotope, partialcharge, residue, spin, type,
+       implicitvalence, isotope, partialcharge, spin, type,
        valence, vector.
 
     (refer to the Open Babel library documentation for more info).
@@ -709,123 +587,44 @@ class Atom(object):
     @property
     def coords(self):
         return (self.OBAtom.GetX(), self.OBAtom.GetY(), self.OBAtom.GetZ())
-
     @property
-    def atomicmass(self):
-        return self.OBAtom.GetAtomicMass()
-
+    def atomicmass(self): return self.OBAtom.GetAtomicMass()
     @property
-    def atomicnum(self):
-        return self.OBAtom.GetAtomicNum()
-
+    def atomicnum(self): return self.OBAtom.GetAtomicNum()
     @property
-    def cidx(self):
-        return self.OBAtom.GetCIdx()
-
+    def cidx(self): return self.OBAtom.GetCIdx()
     @property
-    def coordidx(self):
-        return self.OBAtom.GetCoordinateIdx()
-
+    def coordidx(self): return self.OBAtom.GetCoordinateIdx()
     @property
-    def exactmass(self):
-        return self.OBAtom.GetExactMass()
-
+    def exactmass(self): return self.OBAtom.GetExactMass()
     @property
-    def formalcharge(self):
-        return self.OBAtom.GetFormalCharge()
-
+    def formalcharge(self): return self.OBAtom.GetFormalCharge()
     @property
-    def heavyvalence(self):
-        return self.OBAtom.GetHvyValence()
-
+    def heavyvalence(self): return self.OBAtom.GetHvyValence()
     @property
-    def heterovalence(self):
-        return self.OBAtom.GetHeteroValence()
-
+    def heterovalence(self): return self.OBAtom.GetHeteroValence()
     @property
-    def hyb(self):
-        return self.OBAtom.GetHyb()
-
+    def hyb(self): return self.OBAtom.GetHyb()
     @property
-    def idx(self):
-        return self.OBAtom.GetIdx()
-
+    def idx(self): return self.OBAtom.GetIdx()
     @property
-    def implicitvalence(self):
-        return self.OBAtom.GetImplicitValence()
-
+    def implicitvalence(self): return self.OBAtom.GetImplicitValence()
     @property
-    def isotope(self):
-        return self.OBAtom.GetIsotope()
-
+    def isotope(self): return self.OBAtom.GetIsotope()
     @property
-    def partialcharge(self):
-        return self.OBAtom.GetPartialCharge()
-
+    def partialcharge(self): return self.OBAtom.GetPartialCharge()
     @property
-    def residue(self):
-        return Residue(self.OBAtom.GetResidue())
-
+    def spin(self): return self.OBAtom.GetSpinMultiplicity()
     @property
-    def spin(self):
-        return self.OBAtom.GetSpinMultiplicity()
-
+    def type(self): return self.OBAtom.GetType()
     @property
-    def type(self):
-        return self.OBAtom.GetType()
-
+    def valence(self): return self.OBAtom.GetValence()
     @property
-    def valence(self):
-        return self.OBAtom.GetValence()
-
-    @property
-    def vector(self):
-        return self.OBAtom.GetVector()
+    def vector(self): return self.OBAtom.GetVector()
 
     def __str__(self):
         c = self.coords
         return "Atom: %d (%.2f %.2f %.2f)" % (self.atomicnum, c[0], c[1], c[2])
-
-
-class Residue(object):
-    """Represent a Pybel residue.
-
-    Required parameter:
-       OBResidue -- an Open Babel OBResidue
-
-    Attributes:
-       atoms, idx, name.
-
-    (refer to the Open Babel library documentation for more info).
-
-    The original Open Babel atom can be accessed using the attribute:
-       OBResidue
-    """
-
-    def __init__(self, OBResidue):
-        self.OBResidue = OBResidue
-
-    @property
-    def atoms(self):
-        return [Atom(atom) for atom in ob.OBResidueAtomIter(self.OBResidue)]
-
-    @property
-    def idx(self):
-        return self.OBResidue.GetIdx()
-
-    @property
-    def name(self):
-        return self.OBResidue.GetName()
-
-    def __iter__(self):
-        """Iterate over the Atoms of the Residue.
-
-        This allows constructions such as the following:
-           for atom in residue:
-               print atom
-        """
-        return iter(self.atoms)
-
 
 def _findbits(fp, bitsperint):
     """Find which bits are set in a list/vector.
@@ -849,7 +648,6 @@ def _findbits(fp, bitsperint):
         start += bitsperint
     return ans
 
-
 class Fingerprint(object):
     """A Molecular Fingerprint.
 
@@ -861,28 +659,22 @@ class Fingerprint(object):
        bits -- a list of bits set in the Fingerprint
 
     Methods:
-       The "|" operator can be used to calculate the Tanimoto coeff. For
-       example, given two Fingerprints 'a', and 'b', the Tanimoto coefficient
-       is given by:
+       The "|" operator can be used to calculate the Tanimoto coeff. For example,
+       given two Fingerprints 'a', and 'b', the Tanimoto coefficient is given by:
           tanimoto = a | b
     """
-
     def __init__(self, fingerprint):
         self.fp = fingerprint
-
     def __or__(self, other):
         return ob.OBFingerprint.Tanimoto(self.fp, other.fp)
-
     @property
     def bits(self):
         return _findbits(self.fp, ob.OBFingerprint.Getbitsperint())
-
     def __str__(self):
         fp = self.fp
         if sys.platform[:4] == "java":
             fp = [self.fp.get(i) for i in range(self.fp.size())]
         return ", ".join([str(x) for x in fp])
-
 
 class Smarts(object):
     """A Smarts Pattern Matcher
@@ -903,15 +695,13 @@ class Smarts(object):
     that match the SMARTS pattern. In this case, there are three matches
     for each of the three ethyl groups in the molecule.
     """
-
-    def __init__(self, smartspattern):
+    def __init__(self,smartspattern):
         """Initialise with a SMARTS pattern."""
         self.obsmarts = ob.OBSmartsPattern()
         success = self.obsmarts.Init(smartspattern)
         if not success:
             raise IOError("Invalid SMARTS pattern")
-
-    def findall(self, molecule):
+    def findall(self,molecule):
         """Find all matches of the SMARTS pattern to a particular molecule.
 
         Required parameters:
@@ -922,7 +712,6 @@ class Smarts(object):
         if sys.platform[:4] == "java":
             vector = [vector.get(i) for i in range(vector.size())]
         return list(vector)
-
 
 class MoleculeData(object):
     """Store molecule data in a dictionary-type object
@@ -952,68 +741,52 @@ class MoleculeData(object):
     >>> print len(data), data.keys(), data.has_key("NSC")
     1 ['Comment'] False
     """
-
     def __init__(self, obmol):
         self._mol = obmol
-
     def _data(self):
         data = self._mol.GetData()
         if sys.platform[:4] == "java":
             data = [data.get(i) for i in range(data.size())]
         answer = [x for x in data if
-                  x.GetDataType() == _obconsts.PairData or
-                  x.GetDataType() == _obconsts.CommentData]
+                   x.GetDataType()==_obconsts.PairData or
+                   x.GetDataType()==_obconsts.CommentData]
         if sys.platform[:3] != "cli":
             answer = [_obfuncs.toPairData(x) for x in answer]
         return answer
-
     def _testforkey(self, key):
-        if key not in self:
+        if not key in self:
             raise KeyError("'%s'" % key)
-
     def keys(self):
         return [x.GetAttribute() for x in self._data()]
-
     def values(self):
         return [x.GetValue() for x in self._data()]
-
     def items(self):
         return iter(zip(self.keys(), self.values()))
-
     def __iter__(self):
         return iter(self.keys())
-
-    def iteritems(self):  # Can remove for Python 3
+    def iteritems(self): # Can remove for Python 3
         return self.items()
-
     def __len__(self):
         return len(self._data())
-
     def __contains__(self, key):
         return self._mol.HasData(key)
-
     def __delitem__(self, key):
         self._testforkey(key)
         self._mol.DeleteData(self._mol.GetData(key))
-
     def clear(self):
         for key in self:
             del self[key]
-
     def has_key(self, key):
         return key in self
-
     def update(self, dictionary):
         for k, v in dictionary.items():
             self[k] = v
-
     def __getitem__(self, key):
         self._testforkey(key)
         answer = self._mol.GetData(key)
         if sys.platform[:3] != "cli":
             answer = _obfuncs.toPairData(answer)
         return answer.GetValue()
-
     def __setitem__(self, key, value):
         if key in self:
             if sys.platform[:3] != "cli":
@@ -1026,13 +799,11 @@ class MoleculeData(object):
             pairdata.SetAttribute(key)
             pairdata.SetValue(str(value))
             self._mol.CloneData(pairdata)
-
     def __repr__(self):
         return dict(self.items()).__repr__()
 
 if sys.platform[:3] == "cli":
     class _MyForm(Form):
-
         def __init__(self):
             Form.__init__(self)
 
@@ -1040,7 +811,7 @@ if sys.platform[:3] == "cli":
             # adjust the form's client area size to the picture
             self.ClientSize = Size(300, 300)
             self.Text = title
-
+             
             self.filename = filename
             self.image = Image.FromFile(self.filename)
             pictureBox = PictureBox()
@@ -1049,10 +820,10 @@ if sys.platform[:3] == "cli":
             pictureBox.Image = self.image
             # fit the picture box to the frame
             pictureBox.Dock = DockStyle.Fill
-
+             
             self.Controls.Add(pictureBox)
             self.Show()
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__=="__main__": #pragma: no cover
     import doctest
     doctest.testmod(verbose=True)

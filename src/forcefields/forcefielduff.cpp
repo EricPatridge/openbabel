@@ -54,7 +54,6 @@ namespace OpenBabel {
       rab = OBForceField::VectorDistance(pos_a, pos_b);
     }
 
-    // Harmonic bond stretching
     delta = rab - r0; // we pre-compute the r0 below
     delta2 = delta * delta;
     energy = kb * delta2; // we fold the 1/2 into kb below
@@ -118,8 +117,7 @@ namespace OpenBabel {
     if (gradients) {
       theta = OBForceField::VectorAngleDerivative(pos_a, pos_b, pos_c, force_a, force_b, force_c);
 
-      // Supply a small nudge if the angle is degenerate
-      if (theta < 2.5 || theta > 357.5) {
+      if (theta < 2.5 || theta > 355.0) {
         vector3 v1;
         v1.randomUnitVector();
         for (int i = 0; i < 3; ++i)
@@ -133,57 +131,55 @@ namespace OpenBabel {
     if (!isfinite(theta))
       theta = 0.0; // doesn't explain why GetAngle is returning NaN but solves it for us
 
-    double cosT;
-
+    double cosT = cos(theta);
     switch (coord) {
     case 1: // sp -- linear case, minima at 180 degrees, max (amplitude 2*ka) at 0, 360
       // Fixed typo from Rappe paper (i.e., it's NOT 1 - cosT)
-      energy = ka*(1.0 + cos(theta));
+      energy = ka*(1.0 + cosT);
       break;
-    case 2: // sp2 -- trigonal planar or equatorial plane of trigonal bipyramidal
-    case 4: // square planar
+    case 2: // sp2 -- trigonal planar, min at 120, 240, max at 0, 360 (amplitude 2*ka)
+      // Rappe form: (1 - cos 3*theta) -- minima at 0, 360 (bad...)
+      energy = (ka/4.5) * (1.0 + (1.0 + cosT)*(4.0*cosT));
+      break;
+    case 4: // square planar // min at 90, 180, 270, max at 0, 360 (amplitude 2*ka)
     case 6: // octahedral
-      // ka already is pre-computed as ka/n^2 to save CPU cycles
-      // UNLIKE Rappe paper, we add a penalty for angles close to zero, based on ESFF
-      // i.e., if the angle is less than approx theta0, energy goes up exponentially
-      energy = ka * (1 - cos(n*theta)) + exp(-20.0*(theta - theta0 + 0.25));
+      // Rappe form: (1 - cos 4*theta) -- minima at 0, 360 (bad...)
+      energy = ka * (1.0 + cosT)*cosT*cosT;
       break;
-    case 7: // IF7 pentagonal -- pentagonal bipyramidal
+    case 7: // IF7.
       /* theta = 1/5 * 2 pi.  cosT = .30901699
        * theta = 2/5 * 2 pi.  cosT = -.80901699
        * theta = 3/5 * 2 pi.  cosT = -.80901699
        * theta = 4/5 * 2 pi.  cosT = .30901699
        */
-      cosT = cos(theta);
       energy = ka * c1 * (cosT - .30901699) * (cosT - .30906199) * (cosT + .80901699) * (cosT + .8091699);
       break;
     default: // general (sp3) coordination
-      cosT = cos(theta);
       energy = ka*(c0 + c1*cosT + c2*(2.0*cosT*cosT - 1.0)); // use cos 2t = (2cos^2 - 1)
     }
 
     if (gradients) {
-      double sinT;
+      double sinT = sin(theta);
 
       switch (coord) {
       case 1: // sp -- linear case
-        dE = -ka * sin(theta);
+        dE = -ka * sinT;
         break;
       case 2: // sp2 -- trigonal planar
-      case 6: // octahedral
+        dE = -(ka*4.0/4.5) * (sinT + sin(2.0*theta));
+        break;
       case 4: // square planar
-        dE = ka * n * sin(n * theta)  -20.0 * exp(-20.0*(theta - theta0 + 0.25));
+      case 6: // octahedral
+        dE = -ka * cosT * (2.0 + 3.0 * cosT) * sinT;
         break;
       case 7: // pentagonal bipyramidal
-        sinT = sin(theta);
-        cosT = cos(theta);
         dE =
           c1 * -ka * (2 * sinT * (cosT - .30906199) * (cosT + .80901699) * (cosT + .8091699) +
                       2 * sinT * (cosT - .30901699) * (cosT - .30906199) * (cosT + .8091699));
         //dE = -ka * c1 * sin(5*theta) * 5;
         break;
       default: // general (sp3) coordination
-        dE = -ka * (c1*sin(theta) + 2.0 * c2*sin(2 * theta));
+        dE = -ka * (c1*sinT + 2.0 * c2*sin(2.0 * theta));
       }
 
       OBForceField::VectorSelfMultiply(force_a, dE);
@@ -779,7 +775,7 @@ namespace OpenBabel {
             largestRadius = parameterA->_dpar[0];
             largestNbr = current;
           }
-          if (secondLargestNbr == NULL) {
+          if (secondLargestNbr == 0) {
             // save this atom
             secondLargestNbr = current;
           }
@@ -790,21 +786,18 @@ namespace OpenBabel {
         label->SetAttribute("UFF_CENTRAL_ATOM");
         label->SetValue("True"); // doesn't really matter
         atom->SetData(label);
-
+        // And tag the axial substituents
         label = new OBPairData;
         label->SetAttribute("UFF_AXIAL_ATOM");
         label->SetValue("True");
         largestNbr->SetData(label);
-
-        if (secondLargestNbr != NULL) { // check for NULL, no guarantee
-          label = new OBPairData;
-          label->SetAttribute("UFF_AXIAL_ATOM");
-          label->SetValue("True");
-          secondLargestNbr->SetData(label);
-        }
+        label = new OBPairData;
+        label->SetAttribute("UFF_AXIAL_ATOM");
+        label->SetValue("True");
+        secondLargestNbr->SetData(label);
 
       } // end work for 5-coordinate angles
-      if (GetCoordination(&*atom, parameterB->_ipar[0]) == 7) { // pentagonal bipyramidal
+      if (GetCoordination(&*atom, parameterB->_ipar[0]) == 7) {
         // First, find the two largest neighbors
         OBAtom *largestNbr, *current, *secondLargestNbr = 0;
         double largestRadius;
@@ -822,7 +815,7 @@ namespace OpenBabel {
             largestRadius = parameterA->_dpar[0];
             largestNbr = current;
           }
-          if (secondLargestNbr == NULL) {
+          if (secondLargestNbr == 0) {
             // save this atom
             secondLargestNbr = current;
           }
@@ -838,12 +831,11 @@ namespace OpenBabel {
         label->SetAttribute("UFF_AXIAL_ATOM");
         label->SetValue("True");
         largestNbr->SetData(label);
-        if (secondLargestNbr != NULL) { // check for NULL, no guarantee
-          label = new OBPairData;
-          label->SetAttribute("UFF_AXIAL_ATOM");
-          label->SetValue("True");
-          secondLargestNbr->SetData(label);
-        }
+        label = new OBPairData;
+        label->SetAttribute("UFF_AXIAL_ATOM");
+        label->SetValue("True");
+        secondLargestNbr->SetData(label);
+
       }
     } // end loop through atoms
 
@@ -975,6 +967,7 @@ namespace OpenBabel {
         // large coordination sphere (e.g., [ReH9]-2 or [Ce(NO3)6]-2)
         // just resort to using VDW 1-3 interactions to push atoms into place
         // there's not much else we can do without real parameters
+        // wait, what?  We can handle IF7 fine.
         if (SetupVDWCalculation(a, c, vdwcalc)) {
           _vdwcalculations.push_back(vdwcalc);
         }
@@ -984,52 +977,61 @@ namespace OpenBabel {
         continue;
 
       } else if (coordination == 7) { // pentagonal bipyramidal
+        // This section is commented out.
+        // If you want to try to tackle 7-coordinate species, give this a try
+        // and change the first conditional above to >7, not >=7
         // This doesn't work so well because it's hard to classify between
         // axial-equatorial (90 degrees) and proximal equatorial (~72 degrees).
+        // You'll probably have to do something like the pre-evaluation of 5-coordinate atoms at the top of this method (this is what I did)
+        //
+        //     }  else if (coordination == 7) { // pentagonal bipyramidal
         double currentTheta;
         currentTheta =  a->GetAngle(&*b, &*c);
 
         anglecalc.c0 = 1.0;
-        if (b->HasData("UFF_CENTRAL_ATOM")
-              && a->HasData("UFF_AXIAL_ATOM")
-              && c->HasData("UFF_AXIAL_ATOM")) { // axial ligands = linear
-          anglecalc.coord = 1; // like sp
-          anglecalc.theta0 = 180.0 * DEG_TO_RAD;
-          anglecalc.c1 = 1.0;
-        } else if ( (a->HasData("UFF_AXIAL_ATOM") && !c->HasData("UFF_AXIAL_ATOM"))
-                    || (c->HasData("UFF_AXIAL_ATOM") && !a->HasData("UFF_AXIAL_ATOM")) ) { // axial-equatorial ligands
-          anglecalc.coord = 4; // like sq. planar or octahedral
-          anglecalc.theta0 = 90.0 * DEG_TO_RAD;
-          anglecalc.c1 = 1.0;
-        } else { // equatorial - equatorial
-          anglecalc.coord = 7; // unlike anything else, as theta0 is ignored.
-          anglecalc.theta0 = (currentTheta > 108.0 ? 144.0 : 72.0) * DEG_TO_RAD;
-          anglecalc.c1 = 1.0;
-        }
-        anglecalc.c2 = 0.0;
-
-        /*
         if (0) {
           if (currentTheta >= 155.0) { // axial ligands = linear
             anglecalc.coord = 1; // like sp
-            anglecalc.theta0 = 180.0 * DEG_TO_RAD;
+            anglecalc.theta0 = 180.0;
             anglecalc.c1 = 1.0;
           } else if (currentTheta < 155.0 && currentTheta >= 110.0) { // distal equatorial
             anglecalc.coord = 7; // like sp3
-            anglecalc.theta0 = 144.0 * DEG_TO_RAD;
+            anglecalc.theta0 = 144.0;
             anglecalc.c1 = 1.0;
           } else if (currentTheta < 110.0 && currentTheta >= 85.0) { // axial-equatorial
             anglecalc.coord = 4; // like sq. planar or octahedral
-            anglecalc.theta0 = 90.0 * DEG_TO_RAD;
+            anglecalc.theta0 = 90.0;
             anglecalc.c1 = 1.0;
           } else if (currentTheta < 85.0) { // proximal equatorial
             anglecalc.coord = 7; // general case (i.e., like sp3)
-            anglecalc.theta0 = 72.0 * DEG_TO_RAD;
+            anglecalc.theta0 = 72.0;
             anglecalc.c1 = 1.0;
           }
           anglecalc.c2 = 0.0;
+
+          //         // Also add a VDW 1-3 interaction to distort slightly
+          //         if (SetupVDWCalculation(a, c, vdwcalc)) {
+          //           _vdwcalculations.push_back(vdwcalc);
+          //         }
         } else {
-        */
+          if (b->HasData("UFF_CENTRAL_ATOM")
+              && a->HasData("UFF_AXIAL_ATOM")
+              && c->HasData("UFF_AXIAL_ATOM")) { // axial ligands = linear
+            anglecalc.coord = 1; // like sp
+            anglecalc.theta0 = 180.0;
+            anglecalc.c1 = 1.0;
+          } else if ( (a->HasData("UFF_AXIAL_ATOM") && !c->HasData("UFF_AXIAL_ATOM"))
+                      || (c->HasData("UFF_AXIAL_ATOM") && !a->HasData("UFF_AXIAL_ATOM")) ) { // axial-equatorial ligands
+            anglecalc.coord = 4; // like sq. planar or octahedral
+            anglecalc.theta0 = 90.0;
+            anglecalc.c1 = 1.0;
+          } else { // equatorial - equatorial
+            anglecalc.coord = 7; // unlike anything else, as theta0 is ignored.
+            anglecalc.theta0 = (currentTheta > 108.0 ? 144.0 : 72.0);
+            anglecalc.c1 = 1.0;
+          }
+          anglecalc.c2 = 0.0;
+        }
 
       } else if (coordination == 5) { // trigonal bipyramidal
         anglecalc.c0 = 1.0;
@@ -1038,52 +1040,52 @@ namespace OpenBabel {
             && a->HasData("UFF_AXIAL_ATOM")
             && c->HasData("UFF_AXIAL_ATOM")) { // axial ligands = linear
           anglecalc.coord = 1; // like sp
-          anglecalc.theta0 = 180.0 * DEG_TO_RAD;
+          anglecalc.theta0 = 180.0;
           anglecalc.c1 = 1.0;
         } else if ( (a->HasData("UFF_AXIAL_ATOM") && !c->HasData("UFF_AXIAL_ATOM"))
                     || (c->HasData("UFF_AXIAL_ATOM") && !a->HasData("UFF_AXIAL_ATOM")) ) { // axial-equatorial ligands
           anglecalc.coord = 4; // like sq. planar or octahedral
-          anglecalc.theta0 = 90.0 * DEG_TO_RAD;
+          anglecalc.theta0 = 90.0;
           anglecalc.c1 = 1.0;
         } else { // equatorial - equatorial
           anglecalc.coord = 2; // like sp2
-          anglecalc.theta0 = 120.0 * DEG_TO_RAD;
+          anglecalc.theta0 = 120.0;
           anglecalc.c1 = -1.0;
         }
         anglecalc.c2 = 0.0;
       }
       else { // normal coordination: sp, sp2, sp3, square planar, octahedral
         anglecalc.coord = coordination;
-        anglecalc.theta0 = parameterB->_dpar[1] * DEG_TO_RAD;
+        anglecalc.theta0 = parameterB->_dpar[1];
         if (coordination != parameterB->_ipar[0]) {
           switch (coordination)
             {
             case 1:
-              anglecalc.theta0 = 180.0 * DEG_TO_RAD;
+              anglecalc.theta0 = 180.0;
               break;
             case 2:
-              anglecalc.theta0 = 120.0 * DEG_TO_RAD;
+              anglecalc.theta0 = 120.0;
               break;
             case 4: // sq. planar
             case 5: // axial / equatorial
             case 6: // octahedral
             case 7: // axial equatorial
-              anglecalc.theta0 = 90.0 * DEG_TO_RAD;
+              anglecalc.theta0 = 90.0;
               break;
             case 3: // tetrahedral
             default:
-              anglecalc.theta0 = 109.5 * DEG_TO_RAD;
+              anglecalc.theta0 = 109.5;
               break;
             }
         }
-        anglecalc.cosT0 = cos(anglecalc.theta0);
-        sinT0 = sin(anglecalc.theta0);
+        anglecalc.cosT0 = cos(anglecalc.theta0 * DEG_TO_RAD);
+        sinT0 = sin(anglecalc.theta0 * DEG_TO_RAD);
         anglecalc.c2 = 1.0 / (4.0 * sinT0 * sinT0);
         anglecalc.c1 = -4.0 * anglecalc.c2 * anglecalc.cosT0;
         anglecalc.c0 = anglecalc.c2*(2.0*anglecalc.cosT0*anglecalc.cosT0 + 1.0);
       }
 
-      anglecalc.cosT0 = cos(anglecalc.theta0);
+      anglecalc.cosT0 = cos(anglecalc.theta0 * DEG_TO_RAD);
       anglecalc.zi = parameterA->_dpar[5];
       anglecalc.zk = parameterC->_dpar[5];
 			// Precompute the force constant
@@ -1106,22 +1108,8 @@ namespace OpenBabel {
 
 			// Equation 13 from paper -- corrected by Towhee
 			// Note that 1/(rij * rjk) cancels with rij*rjk in eqn. 13
-			anglecalc.ka = (664.12 * KCAL_TO_KJ) * (anglecalc.zi * anglecalc.zk / (pow(rac, 5.0)));
+			anglecalc.ka = (644.12 * KCAL_TO_KJ) * (anglecalc.zi * anglecalc.zk / (pow(rac, 5.0)));
 			anglecalc.ka *= (3.0*rab*rbc*(1.0 - anglecalc.cosT0*anglecalc.cosT0) - rac*rac*anglecalc.cosT0);
-      // Make sure to divide by n^2 to save CPU cycles
-      switch (anglecalc.coord) {
-      case 2: // sp2, so divide by 3^2
-        anglecalc.n = 3;
-        anglecalc.ka = anglecalc.ka / 9.0;
-        break;
-      case 4: // divide by 4^2
-      case 6:
-        anglecalc.n = 4;
-        anglecalc.ka = anglecalc.ka / 16.0;
-        break;
-      default:
-        break;
-      }
 
       anglecalc.SetupPointers();
       _anglecalculations.push_back(anglecalc);
@@ -1529,24 +1517,6 @@ namespace OpenBabel {
     return true;
   }
 
-  bool OBForceFieldUFF::SetupPointers()
-  {
-    for (unsigned int i = 0; i < _bondcalculations.size(); ++i)
-      _bondcalculations[i].SetupPointers();
-    for (unsigned int i = 0; i < _anglecalculations.size(); ++i)
-      _anglecalculations[i].SetupPointers();
-    for (unsigned int i = 0; i < _torsioncalculations.size(); ++i)
-      _torsioncalculations[i].SetupPointers();
-     for (unsigned int i = 0; i < _oopcalculations.size(); ++i)
-      _oopcalculations[i].SetupPointers();
-    for (unsigned int i = 0; i < _vdwcalculations.size(); ++i)
-      _vdwcalculations[i].SetupPointers();
-    for (unsigned int i = 0; i < _electrostaticcalculations.size(); ++i)
-      _electrostaticcalculations[i].SetupPointers();
-
-    return true;
-  }
-
   bool OBForceFieldUFF::ParseParamFile()
   {
     vector<string> vs;
@@ -1695,18 +1665,14 @@ namespace OpenBabel {
         if (organomet)
           a->SetType("P_3+q");
       }
-      else if (a->GetAtomicNum() > 102) { // superheavy
-        a->SetType("Lw6+3"); // prevent a crash with atoms beyond the parameterization Avogadro PR#741
-      }
     }
 
     IF_OBFF_LOGLVL_LOW {
       OBFFLog("\nA T O M   T Y P E S\n\n");
-      OBFFLog("IDX\tTYPE\tRING\n");
+      OBFFLog("IDX\tTYPE\n");
 
       FOR_ATOMS_OF_MOL (a, _mol) {
-        snprintf(_logbuf, BUFF_SIZE, "%d\t%s\t%s\n", a->GetIdx(), a->GetType(),
-	  (a->IsInRing() ? (a->IsAromatic() ? "AR" : "AL") : "NO"));
+        snprintf(_logbuf, BUFF_SIZE, "%d\t%s\n", a->GetIdx(), a->GetType());
         OBFFLog(_logbuf);
       }
 
@@ -1815,7 +1781,7 @@ namespace OpenBabel {
       snprintf(_logbuf, BUFF_SIZE, "    angle   (%7.3f, %7.3f, %7.3f)  (%7.3f, %7.3f, %7.3f)  (%5.2f, %5.2f, %5.2f)\n", numgrad.x(), numgrad.y(), numgrad.z(),
                anagrad.x(), anagrad.y(), anagrad.z(), err.x(), err.y(), err.z());
       OBFFLog(_logbuf);
-      if (err.x() > 8.0 || err.y() > 8.0 || err.z() > 8.0)
+      if (err.x() > 5.0 || err.y() > 5.0 || err.z() > 5.0)
         passed = false;
 
       // OBFF_ETORSION
@@ -1842,7 +1808,6 @@ namespace OpenBabel {
       snprintf(_logbuf, BUFF_SIZE, "    oop     (%7.3f, %7.3f, %7.3f)  (%7.3f, %7.3f, %7.3f)  (%5.2f, %5.2f, %5.2f)\n", numgrad.x(), numgrad.y(), numgrad.z(),
                anagrad.x(), anagrad.y(), anagrad.z(), err.x(), err.y(), err.z());
       OBFFLog(_logbuf);
-      // We don't care if the OOP error is relatively large
       //      if (err.x() > 5.0 || err.y() > 5.0 || err.z() > 5.0)
       //        passed = false;
 

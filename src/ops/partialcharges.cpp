@@ -22,7 +22,6 @@ GNU General Public License for more details.
 #include<openbabel/chargemodel.h>
 #include <openbabel/obconversion.h>
 
-#include <string.h>
 namespace OpenBabel
 {
 
@@ -45,51 +44,20 @@ public:
 OpPartialCharge theOpPartialCharge("partialcharge"); //Global instance
 
 /////////////////////////////////////////////////////////////////
-bool OpPartialCharge::Do(OBBase* pOb, const char* OptionText, OpMap* pmap, OBConversion* pConv)
+bool OpPartialCharge::Do(OBBase* pOb, const char* OptionText, OpMap* pOptions, OBConversion* pConv)
 {
-	char *arg = NULL;
-	const char *tok1= NULL;
- 	const char *tok2= NULL;
-  OpMap::const_iterator iter;
   OBMol* pmol = dynamic_cast<OBMol*>(pOb);
-  bool print = false;
-
   if(!pmol)
     return false;
 
-  iter = pmap->find("print");
-  if(iter!=pmap->end())
-    print=true;
-
-	if( OptionText ) {
-		arg = strdup( OptionText );
-		tok1 = strtok( arg, ":" );
-		tok2 = strtok( NULL, "\0" );
-	}
-	else {
-		tok1 = OptionText;
-	}
-
-  _pChargeModel = OBChargeModel::FindType(tok1);
-
-
+  _pChargeModel = OBChargeModel::FindType(OptionText);
   if(!_pChargeModel)
     {
       obErrorLog.ThrowError(__FUNCTION__,
-                            std::string("Unknown charge model ") + tok1, obError, onceOnly);
-			return false;
+                            std::string("Unknown charge model ") + OptionText, obError, onceOnly);
+      return false;
     }
 
-  bool success = _pChargeModel->ComputeCharges(*pmol, tok2);
-
-  if (print) {
-    // print them on stdout
-    FOR_ATOMS_OF_MOL(atom, pmol) {
-      std::cout << atom->GetPartialCharge() << '\n';
-    }
-    std::cout << std::endl; // extra blank and flush the stream
-  }
-
-  return success;
+  return _pChargeModel->ComputeCharges(*pmol);
 }
 }//namespace

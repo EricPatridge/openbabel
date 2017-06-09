@@ -36,26 +36,18 @@ using namespace OpenBabel;
 void GenerateRingReference();
 
 #ifdef TESTDATADIR
-  string ltestdatadir = TESTDATADIR;
-  string lresults_file = ltestdatadir + "ringresults.txt";
-  string lsmilestypes_file = ltestdatadir + "attype.00.smi";
+  string testdatadir = TESTDATADIR;
+  string results_file = testdatadir + "ringresults.txt";
+  string smilestypes_file = testdatadir + "attype.00.smi";
 #else
-  string lresults_file = "files/ringresults.txt";
-  string lsmilestypes_file = "files/attype.00.smi";
+  string results_file = "files/ringresults.txt";
+  string smilestypes_file = "files/attype.00.smi";
 #endif
 
-int ringtest(int argc, char* argv[])
+int main(int argc,char *argv[])
 {
-  int defaultchoice = 1;
-  
-  int choice = defaultchoice;
-
-  if (argc > 1) {
-    if(sscanf(argv[1], "%d", &choice) != 1) {
-      printf("Couldn't parse that input as a number\n");
-      return -1;
-    }
-  }
+  // turn off slow sync with C-style output (we don't use it anyway).
+  std::ios::sync_with_stdio(false);
 
   // Define location of file formats for testing
   #ifdef FORMATDIR
@@ -64,25 +56,34 @@ int ringtest(int argc, char* argv[])
     putenv(env);
   #endif
 
-    if (choice==99)
+  if (argc != 1)
     {
+      if (strncmp(argv[1], "-g", 2))
+        {
+          cout << "Usage: ringtest" << endl;
+          cout << "   Tests Open Babel ring perception testing." << endl;
+          return 0;
+        }
+      else
+        {
           GenerateRingReference();
           return 0;
+        }
     }
 
   cout << "# Testing ring perception..." << endl;
 
   std::ifstream mifs;
-  if (!SafeOpen(mifs, lsmilestypes_file.c_str()))
+  if (!SafeOpen(mifs, smilestypes_file.c_str()))
     {
-      cout << "Bail out! Cannot read file " << lsmilestypes_file << endl;
+      cout << "Bail out! Cannot read file " << smilestypes_file << endl;
       return -1; // test failed
     }
 
   std::ifstream rifs;
-  if (!SafeOpen(rifs, lresults_file.c_str()))
+  if (!SafeOpen(rifs, results_file.c_str()))
     {
-      cout << "Bail out! Cannot read file " << lresults_file << endl;
+      cout << "Bail out! Cannot read file " << results_file << endl;
       return -1; // test failed
     }
 
@@ -125,7 +126,7 @@ int ringtest(int argc, char* argv[])
       vb.resize(mol.NumBonds(),false);
       //check ring bonds
       tokenize(vs,buffer);
-      for (i = vs.begin();i != vs.end();++i)
+      for (i = vs.begin();i != vs.end();i++)
         vb[atoi(i->c_str())] = true;
 
       for (bond = mol.BeginBond(j);bond;bond = mol.NextBond(j))
@@ -177,7 +178,7 @@ int ringtest(int argc, char* argv[])
             cout << "ok " << ++currentTest << " # correct SSSR count\n";
 
           count = 0;
-          for (m = vr.begin();m != vr.end();++m)
+          for (m = vr.begin();m != vr.end();m++)
             if ((*m)->_pathset[atom->GetIdx()])
               count++;
 
@@ -189,7 +190,7 @@ int ringtest(int argc, char* argv[])
           else
             cout << "ok " << ++currentTest << " # ring membership passed\n";
 
-          ++i;
+          i++;
         }
 
 
@@ -206,11 +207,11 @@ void GenerateRingReference()
 {
   std::ifstream ifs;
 
-  if (!SafeOpen(ifs,lsmilestypes_file.c_str()))
+  if (!SafeOpen(ifs,smilestypes_file.c_str()))
     return;
 
   std::ofstream ofs;
-  if (!SafeOpen(ofs,lresults_file.c_str()))
+  if (!SafeOpen(ofs,results_file.c_str()))
     return;
 
   int count;
@@ -254,7 +255,7 @@ void GenerateRingReference()
       for (atom = mol.BeginAtom(j);atom;atom = mol.NextAtom(j))
         {
           count = 0;
-          for (k = vr.begin();k != vr.end();++k)
+          for (k = vr.begin();k != vr.end();k++)
             if ((*k)->_pathset[atom->GetIdx()])
               count++;
 

@@ -15,10 +15,8 @@ GNU General Public License for more details.
 #include <openbabel/babelconfig.h>
 #include <openbabel/obmolecformat.h>
 
-#include <limits>
+#include <limits.h>
 #include <locale> // For isalpha(int)
-#include <functional>
-#include <iostream>
 
 #define EV_TO_KCAL_PER_MOL 23.060538
 
@@ -26,30 +24,6 @@ using namespace std;
 namespace OpenBabel {
   class VASPFormat : public OBMoleculeFormat
   {
-  protected:
-    class compare_sort_items
-    {
-      std::vector<int> csm;
-      bool num_sort;
-    public:
-      compare_sort_items(const std::vector<int> &_custom_sort_nums, bool _num_sort):
-                         csm(_custom_sort_nums), num_sort(_num_sort) {};
-      bool operator()(const OBAtom *a, const OBAtom *b)
-      {
-        int a_num = a->GetAtomicNum();
-        int b_num = b->GetAtomicNum();
-        int dist = std::distance(std::find(csm.begin(), csm.end(), b_num),
-                                 std::find(csm.begin(), csm.end(), a_num));
-        
-        if ( dist != 0)
-          return dist < 0;
-
-        if( (num_sort) && ( a_num - b_num != 0 ) )
-          return a_num < b_num;
-        
-        return false;
-      }
-    };
   public:
 
     VASPFormat()
@@ -61,7 +35,6 @@ namespace OpenBabel {
       OBConversion::RegisterOptionParam("s", this, 0, OBConversion::INOPTIONS);
       OBConversion::RegisterOptionParam("b", this, 0, OBConversion::INOPTIONS);
       OBConversion::RegisterOptionParam("w", this, 0, OBConversion::OUTOPTIONS);
-      OBConversion::RegisterOptionParam("z", this, 0, OBConversion::OUTOPTIONS);
       OBConversion::RegisterOptionParam("4", this, 0, OBConversion::OUTOPTIONS);
     }
 
@@ -86,11 +59,7 @@ namespace OpenBabel {
         "  b Disable bonding entirely\n\n"
 
         "Write Options e.g. -xw\n"
-        "  Atoms soring:\n"
-        "    no option: default order (presumably this is the order of atoms in the input molecule)\n"
-        "    -xw : Sort atoms by atomic number\n"
-        "    -xz 'atom1 atom2 ..': atom1 first, atom2 second ..., then default order\n"
-        "    -xw -xz 'atom1 atom2': atom1 first, atom2 second ..., then sort atoms by atomic number\n"
+        "  w Sort atoms by atomic number (this helps keep POTCAR files compact)\n"
         "  4 Write a POSCAR using the VASP 4.x specification.\n"
         "    The default is to use the VASP 5.x specification.\n\n"
         ;
@@ -153,12 +122,11 @@ namespace OpenBabel {
     string key, value; // store the info about constraints
     OBPairData *cp;    // in this PairData
     bool hasEnthalpy=false;
-    bool hasVibrations=false;
     bool needSymbolsInGeometryFile = false;
     double enthalpy_eV, pv_eV;
     vector<vector <vector3> > Lx;
-    vector<double> Frequencies;
-    vector<matrix3x3> dipGrad;
+    vector<double> Frequencies, Intensities;
+
 
     // Get path of CONTCAR/POSCAR:
     //    ifs_path.getline(buffer,BUFF_SIZE);
@@ -167,8 +135,8 @@ namespace OpenBabel {
     if (path.empty()) return false; // Should be using ReadFile, not Read!
     size_t found;
     found = path.rfind("/");
-    path = path.substr(0, found);
-    if (found == string::npos) path = "./"; // No "/" in path?
+    if (found == string::npos) return false; // No "/" in path?
+    path = path.substr(0,found);
 
     // Open files
     string potcar_filename = path + "/POTCAR";
@@ -218,7 +186,6 @@ namespace OpenBabel {
     // Build unit cell
     OBUnitCell *cell = new OBUnitCell;
     cell->SetData(x_vec, y_vec, z_vec);
-    cell->SetSpaceGroup(1);
     pmol->SetData(cell);
 
     // Next comes either a list of numbers that represent the stoichiometry of
@@ -339,8 +306,6 @@ namespace OpenBabel {
       vector3 coords (x,y,z);
       if (!cartesian)
         coords = cell->FractionalToCartesian( coords );
-      // If we have Cartesian coordinates, we need to apply the scaling factor
-      else coords *= scale;
       atom->SetVector(coords);
       //if the selective dynamics info is present then read it into OBPairData
       //this needs to be kept somehow to be able to write out the same as input
@@ -401,12 +366,6 @@ namespace OpenBabel {
 
     ifs_dos.close();
 
-    // Vibration intensities
-    vector3 prevDm;
-    vector<vector3> prevXyz;
-    vector3 currDm;
-    vector<vector3> currXyz;
-
     // Read in optional information from outcar
     if (ifs_out) {
       while (ifs_out.getline(buffer,BUFF_SIZE)) {
@@ -423,10 +382,8 @@ namespace OpenBabel {
           tokenize(vs, buffer);
           pmol->SetEnergy(atof(vs[4].c_str()) * EV_TO_KCAL_PER_MOL);
         }
-
         // Frequencies
         if (strstr(buffer, "Eigenvectors") && Frequencies.size() == 0) {
-          hasVibrations = true;
           double x, y, z;
           ifs_out.getline(buffer,BUFF_SIZE);  // dash line
           ifs_out.getline(buffer,BUFF_SIZE);  // blank line
@@ -435,21 +392,22 @@ namespace OpenBabel {
           while (!strstr(buffer, "Eigenvectors")) {
             vector<vector3> vib;
             tokenize(vs, buffer);
-            int freqnum = atoi(vs[0].c_str());
-            if (vs[1].size() == 1 and vs[1].compare("f") == 0) {
-              // Real frequency
-              Frequencies.push_back(atof(vs[7].c_str()));
-            } else if (strstr(vs[1].c_str(), "f/i=")) {
-              // Imaginary frequency
-              Frequencies.push_back(-atof(vs[6].c_str()));
-            } else {
+            if (vs.size() < 2) {
               // No more frequencies
               break;
             }
+            int freqnum = atoi(vs[0].c_str());
+            if (strstr(vs[1].c_str(), "f/i=")) {
+              // Imaginary frequency
+              Frequencies.push_back(-atof(vs[6].c_str()));
+            } else {
+              Frequencies.push_back(atof(vs[7].c_str()));
+            }
+            // TODO: Intensities not parsed yet
+            Intensities.push_back(0.0);
             ifs_out.getline(buffer,BUFF_SIZE);  // header line
             ifs_out.getline(buffer,BUFF_SIZE);  // first displacement line
             tokenize(vs, buffer);
-            // normal modes
             while (vs.size() == 6) {
               x = atof(vs[3].c_str());
               y = atof(vs[4].c_str());
@@ -461,73 +419,13 @@ namespace OpenBabel {
             Lx.push_back(vib);
             ifs_out.getline(buffer,BUFF_SIZE);  // next frequency line
           }
-        }
-
-        if (strstr(buffer, "dipolmoment")) {
-          tokenize(vs, buffer);
-          x = atof(vs[1].c_str());
-          y = atof(vs[2].c_str());
-          z = atof(vs[3].c_str());
-          currDm.Set(x, y, z);
-        }
-        if (strstr(buffer, "TOTAL-FORCE")) {
-          currXyz.clear();
-          ifs_out.getline(buffer, BUFF_SIZE);  // header line
-          ifs_out.getline(buffer, BUFF_SIZE);
-          tokenize(vs, buffer);
-          while (vs.size() == 6) {
-            x = atof(vs[0].c_str());
-            y = atof(vs[1].c_str());
-            z = atof(vs[2].c_str());
-            currXyz.push_back(vector3(x, y, z));
-            ifs_out.getline(buffer, BUFF_SIZE);  // next line
-            tokenize(vs, buffer);
-          }
-        }
-        if (strstr(buffer, "BORN EFFECTIVE CHARGES")) {
-          // IBRION = 7; IBRION = 8
-          dipGrad.clear();
-          ifs_out.getline(buffer, BUFF_SIZE);  // header line
-          ifs_out.getline(buffer, BUFF_SIZE);  // `ion    #`
-          tokenize(vs, buffer);
-          while (vs.size() == 2) {
-            matrix3x3 dmudq;
-            for (int row = 0; row < 3; ++row) {
-              ifs_out.getline(buffer, BUFF_SIZE);
-              tokenize(vs, buffer);
-              x = atof(vs[1].c_str());
-              y = atof(vs[2].c_str());
-              z = atof(vs[3].c_str());
-              dmudq.SetRow(row, vector3(x, y, z));
-            }
-            dipGrad.push_back(dmudq);
-            ifs_out.getline(buffer, BUFF_SIZE);  // next line
-            tokenize(vs, buffer);
-          }
-        } else if (strstr(buffer, "free  energy")) {
-          // IBRION = 5
-          // reached the end of an iteration, use the values
-          if (dipGrad.empty()) {
-            // first iteration: nondisplaced ions
-            dipGrad.resize(pmol->NumAtoms());
-          } else if (prevXyz.empty()) {
-            // even iteration: store values
-            prevXyz = currXyz;
-            prevDm = currDm;
-          } else {
-            // odd iteration: compute dipGrad = dmu / dxyz for moved ion
-            for (size_t natom = 0; natom < pmol->NumAtoms(); ++natom) {
-              const vector3 dxyz = currXyz[natom] - prevXyz[natom];
-              vector3::const_iterator iter = std::find_if(dxyz.begin(), dxyz.end(),
-                      std::bind2nd(std::not_equal_to<double>(), 0.0));
-              if (iter != dxyz.end()) dipGrad[natom].SetRow(iter - dxyz.begin(),
-                                                            (currDm - prevDm) / *iter);
-            }
-            prevXyz.clear();
-          }
+          OBVibrationData* vd = new OBVibrationData;
+          vd->SetData(Lx, Frequencies, Intensities);
+          pmol->SetData(vd);
         }
       }
     }
+
     ifs_out.close();
 
     // Set enthalpy
@@ -554,32 +452,6 @@ namespace OpenBabel {
       pmol->SetData(enthalpyPD_pv);
       pmol->SetData(enthalpyPD_eV);
       pmol->SetData(enthalpyPD_pv_eV);
-    }
-
-    // Set vibrations
-    if (hasVibrations) {
-      // compute dDip/dQ
-      vector<double> Intensities;
-      for (vector<vector<vector3> >::const_iterator
-           lxIter = Lx.begin(); lxIter != Lx.end(); ++lxIter) {
-        vector3 intensity;
-        for (size_t natom = 0; natom < dipGrad.size(); ++natom) {
-          intensity += dipGrad[natom].transpose() * lxIter->at(natom)
-              / sqrt(pmol->GetAtomById(natom)->GetAtomicMass());
-        }
-        Intensities.push_back(dot(intensity, intensity));
-      }
-      const double max = *max_element(Intensities.begin(), Intensities.end());
-      if (max != 0.0) {
-        // Normalize
-        std::transform(Intensities.begin(), Intensities.end(), Intensities.begin(),
-                       std::bind2nd(std::divides<double>(), max / 100.0));
-      } else {
-        Intensities.clear();
-      }
-      OBVibrationData* vd = new OBVibrationData;
-      vd->SetData(Lx, Frequencies, Intensities);
-      pmol->SetData(vd);
     }
 
     pmol->EndModify();
@@ -619,57 +491,55 @@ namespace OpenBabel {
 
     bool selective;
 
-    const char * sortAtomsNum = pConv->IsOption("w", OBConversion::OUTOPTIONS);
-    const char * sortAtomsCustom = pConv->IsOption("z", OBConversion::OUTOPTIONS);
+    const char * sortAtoms = pConv->IsOption("w", OBConversion::OUTOPTIONS);
 
     // Create a list of ids. These may be sorted by atomic number depending
     // on the value of keepOrder.
-    std::vector<OBAtom *> atoms_sorted;
-    atoms_sorted.reserve(mol.NumAtoms());
+    vector<unsigned long> atomids;
+    atomids.reserve(mol.NumAtoms());
+    vector<unsigned int> atomicNums;
+    atomicNums.reserve(mol.NumAtoms());
 
     FOR_ATOMS_OF_MOL(atom, mol) {
-      atoms_sorted.push_back(&(*atom));
+      atomids.push_back(atom->GetId());
+      atomicNums.push_back(atom->GetAtomicNum());
     }
 
-    std::vector<int> custom_sort_nums;
-    
-    if (sortAtomsCustom != NULL)
-    {
-      vector<string> vs;
-      tokenize(vs, sortAtomsCustom);
-      for(size_t i = 0; i < vs.size(); ++i)
-        custom_sort_nums.push_back(etab.GetAtomicNum(vs[i].c_str()));
-    }
+    if (sortAtoms != NULL) {
+      // Sort the ids by atomic number
+      for (size_t i = 0; i < atomids.size() - 1; ++i) {
+        unsigned int atomicNum_i = atomicNums[i];
+        for (size_t j = i+1; j < atomids.size(); ++j) {
+          unsigned int atomicNum_j = atomicNums[j];
 
-    compare_sort_items csi(custom_sort_nums, sortAtomsNum != NULL);
-    std::stable_sort(atoms_sorted.begin(), atoms_sorted.end(), csi);
+          if (atomicNum_j < atomicNum_i) {
+            swap(atomids[i], atomids[j]);
+            swap(atomicNums[i], atomicNums[j]);
+            swap(atomicNum_i, atomicNum_j);
+          }
+        }
+      }
+    }
 
     // Use the atomicNums vector to determine the composition line.
     // atomicNumsCondensed and atomCounts contain the same data as atomicNums:
     // if:
-    //   atoms_sorted[i]->GetAtomicNum() = [ 3 3 3 2 2 8 2 6 6 ]
+    //   atomicNums          = [ 3 3 3 2 2 8 2 6 6 ]
     // then:
-    //   atomicNums =  [(3 3) (2 2) (8 1) (2 1) (6 2)] 
-    
-    std::vector<std::pair<int, int> > atomicNums;    
-    
-    int prev_anum = -20; //not a periodic table number
-    for(int i = 0; i < atoms_sorted.size(); i++)
-    {
-      const int anum = atoms_sorted[i]->GetAtomicNum();
-      
-      if( prev_anum != anum )
-      {
-        std::pair<int, int> x(anum, 1);
-        atomicNums.push_back(x);
+    //   atomicNumsCondensed = [ 3 2 8 2 6 ] // Adjacent duplicates removed
+    //   atomCounts          = [ 3 2 1 1 2 ] // Number of atoms in "block"
+    vector<unsigned int> atomicNumsCondensed;
+    vector<unsigned int> atomCounts;
+    for (size_t i = 0; i < atomicNums.size(); ++i) {
+      const unsigned int currentAtomicNumber = atomicNums[i];
+      atomicNumsCondensed.push_back(currentAtomicNumber);
+      atomCounts.push_back(1);
+      for (++i;
+           i < atomicNums.size() && atomicNums[i] == currentAtomicNumber;
+           ++i) {
+        ++(atomCounts.back());
       }
-      else
-      {    
-        if(atomicNums.size() > 0);  
-          atomicNums.rbegin()->second++;
-      }  
-      
-      prev_anum = anum;
+      --i; // Undo the final increment since the outer loop will redo it.
     }
 
     // write title
@@ -703,20 +573,20 @@ namespace OpenBabel {
     // VASP 5 format
     const char *vasp4Format = pConv->IsOption("4", OBConversion::OUTOPTIONS);
     if (!vasp4Format) {
-      for (vector< std::pair<int, int> >::const_iterator
-           it = atomicNums.begin(),
-           it_end = atomicNums.end(); it != it_end; ++it) {
-        snprintf(buffer, BUFF_SIZE, "%-3s ", etab.GetSymbol(it->first));
+      for (vector<unsigned int>::const_iterator
+           it = atomicNumsCondensed.begin(),
+           it_end = atomicNumsCondensed.end(); it != it_end; ++it) {
+        snprintf(buffer, BUFF_SIZE, "%-3s ",etab.GetSymbol(*it));
         ofs << buffer ;
       }
       ofs << endl;
     }
 
     // then do the same to write out the number of ions of each element
-    for (vector< std::pair<int, int> >::const_iterator
-           it = atomicNums.begin(),
-           it_end = atomicNums.end(); it != it_end; ++it) {
-      snprintf(buffer, BUFF_SIZE, "%-3u ", it->second);
+    for (vector<unsigned int>::const_iterator
+         it = atomCounts.begin(),
+         it_end = atomCounts.end(); it != it_end; ++it) {
+      snprintf(buffer, BUFF_SIZE, "%-3u ", *it);
       ofs << buffer ;
     }
     ofs << endl;
@@ -738,19 +608,20 @@ namespace OpenBabel {
     // print the atomic coordinates in \AA
     ofs << "Cartesian" << endl;
 
-    for (std::vector<OBAtom *>::const_iterator it = atoms_sorted.begin();
-         it != atoms_sorted.end(); ++it) 
-    {
+    for (vector<unsigned long>::const_iterator it = atomids.begin(),
+         it_end = atomids.end();
+         it != it_end && (atom = mol.GetAtomById(*it)); ++it) {
+
       // Print coordinates
       snprintf(buffer,BUFF_SIZE, "%26.19f %26.19f %26.19f",
-               (*it)->GetX(), (*it)->GetY(), (*it)->GetZ());
+               atom->GetX(), atom->GetY(), atom->GetZ());
       ofs << buffer;
 
       // if at least one atom has info about constraints
       if (selective) {
         // if this guy has, write it out
         if (atom->HasData("move")) {
-          OBGenericData *cp = (*it)->GetData("move");
+          OBGenericData *cp = atom->GetData("move");
           // seemingly ridiculous number of digits is written out
           // but sometimes you just don't want to change them
           ofs << " " << cp->GetValue().c_str();

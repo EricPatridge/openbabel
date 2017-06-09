@@ -129,7 +129,7 @@ int DLHandler::findFiles (std::vector <std::string>& file_list,
     }
 
   if (file_list.empty())
-    return 0; // error, didn't find any files at all
+    return(-1); // error, didn't find any files at all
   return file_list.size();
 }
 

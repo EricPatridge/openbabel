@@ -17,11 +17,8 @@ set(formats_utility
   titleformat
   )
 set(formats_compchem
-      abinitformat
       acesformat
       adfformat
-      aoforceformat
-      castepformat
       dmolformat
       fchkformat
       fhiaimsformat
@@ -35,7 +32,6 @@ set(formats_compchem
       molproformat
       mopacformat
       nwchemformat
-      pointcloudformat
       pwscfformat
       qchemformat
       turbomoleformat
@@ -45,7 +41,7 @@ set(formats_compchem
 
 if(MSVC OR HAVE_REGEX_H)
   set(formats_compchem
-      ${formats_compchem} gamessukformat orcaformat
+      ${formats_compchem} gamessukformat
   )
 endif(MSVC OR HAVE_REGEX_H)
 
@@ -71,7 +67,6 @@ set(formats_misc
       crkformat
       cssrformat
       dlpolyformat
-      exyzformat
       fastsearchformat
       fastaformat
       featformat
@@ -79,9 +74,7 @@ set(formats_misc
       fingerprintformat
       freefracformat
       ghemicalformat
-      groformat
       gromos96format
-      lmpdatformat
       mmcifformat
       mmodformat
       moldenformat
@@ -95,13 +88,11 @@ set(formats_misc
       pdbqtformat
       pqrformat
       shelxformat
-      stlformat
       thermoformat
       tinkerformat
       unichemformat
       viewmolformat
       xedformat
-      xsfformat
       xyzformat
       yasaraformat
       genbankformat

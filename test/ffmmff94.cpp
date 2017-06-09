@@ -38,7 +38,7 @@ using namespace OpenBabel;
 #define TESTDATADIR="files/";
 #endif
 
-  int currentTest = 0;
+  unsigned int currentTest = 0;
 
 void GenerateEnergies(string molecules_file, string results_file)
 {
@@ -161,40 +161,49 @@ void TestFile(string filename, string results_file)
     }
 } // end TestFile
 
-int ffmmff94(int argc, char* argv[])
+int main(int argc,char *argv[])
 {
-  int defaultchoice = 1;
-  
-  int choice = defaultchoice;
-
-  if (argc > 1) {
-    if(sscanf(argv[1], "%d", &choice) != 1) {
-      printf("Couldn't parse that input as a number\n");
-      return -1;
-    }
-  }
+  // turn off slow sync with C-style output (we don't use it anyway).
+  std::ios::sync_with_stdio(false);
 
   // Define location of file formats for testing
-  #ifdef FORMATDIR
-    char env[BUFF_SIZE];
-    snprintf(env, BUFF_SIZE, "BABEL_LIBDIR=%s", FORMATDIR);
-    putenv(env);
-  #endif  
+#ifdef FORMATDIR
+  char env[BUFF_SIZE];
+  snprintf(env, BUFF_SIZE, "BABEL_LIBDIR=%s", FORMATDIR);
+  putenv(env);
+#endif
 
   string testdatadir = TESTDATADIR;
+  string molecules_file = testdatadir + "forcefield.sdf";
+  string results_file = testdatadir + "mmff94results.txt";
+
+  if (argc > 1)
+    {
+      if (strncmp(argv[1], "-g", 2))
+        { // Get the filenames from the command-line
+          molecules_file = argv[1];
+          results_file = argv[2];
+          TestFile( string(argv[1]), string(argv[2]));
+          cout << "1.." << currentTest << endl;
+          return 0;
+        }
+      else
+        {
+          if (argc > 3) {
+            molecules_file = argv[2];
+            results_file = argv[3];
+          }
+          GenerateEnergies(molecules_file, results_file);
+          return 0;
+        }
+    }
 
   cout << "# Testing MMFF94 Force Field..." << endl;
-  switch(choice) {
-  case 1:
-    TestFile(testdatadir + "forcefield.sdf", testdatadir + "mmff94results.txt");
-    break;
-  case 2:
-    TestFile(testdatadir + "more-mmff94.sdf", testdatadir + "more-mmff94results.txt"); // provided by Paolo Tosco
-    break;
-  default:
-    cout << "Test number " << choice << " does not exist!\n";
-    return -1;
-  }
+  TestFile(testdatadir + "forcefield.sdf", testdatadir + "mmff94results.txt");
+  TestFile(testdatadir + "more-mmff94.sdf", testdatadir + "more-mmff94results.txt"); // provided by Paolo Tosco
+
+  // return number of tests run
+  cout << "1.." << currentTest << endl;
 
   // Passed tests
   return 0;

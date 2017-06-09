@@ -32,27 +32,18 @@ using namespace std;
 using namespace OpenBabel;
 
 #ifdef TESTDATADIR
-  string ktestdatadir = TESTDATADIR;
-  string kd2file = ktestdatadir + "test2d.xyz";
-  string kd3file = ktestdatadir + "test3d.xyz";
+  string testdatadir = TESTDATADIR;
+  string d2file = testdatadir + "test2d.xyz";
+  string d3file = testdatadir + "test3d.xyz";
 #else
-  string kd2file = "files/test2d.xyz";
-  string kd3file = "files/test3d.xyz";
+  string d2file = "files/test2d.xyz";
+  string d3file = "files/test3d.xyz";
 #endif
 
-int mol(int argc, char* argv[])
+int main(int argc,char *argv[])
 {
-  int defaultchoice = 1;
-  
-  int choice = defaultchoice;
-
-  if (argc > 1) {
-    if(sscanf(argv[1], "%d", &choice) != 1) {
-      printf("Couldn't parse that input as a number\n");
-      return -1;
-    }
-  }
-
+  // turn off slow sync with C-style output (we don't use it anyway).
+  std::ios::sync_with_stdio(false);
 
   // Define location of file formats for testing
   #ifdef FORMATDIR
@@ -60,6 +51,13 @@ int mol(int argc, char* argv[])
     snprintf(env, BUFF_SIZE, "BABEL_LIBDIR=%s", FORMATDIR);
     putenv(env);
   #endif
+
+  if (argc != 1)
+    {
+      cout << "Usage: mol" << endl;
+      cout << " Unit tests for OBMol " << endl;
+      return(-1);
+    }
 
   cout << "# Unit tests for OBMol \n";
 
@@ -103,7 +101,7 @@ int mol(int argc, char* argv[])
     cout << "not ok 7\n";
   }
 
-  ifstream ifs1(kd3file.c_str());
+  ifstream ifs1(d3file.c_str());
   if (!ifs1)
     {
       cout << "Bail out! Cannot read input file!" << endl;
@@ -184,52 +182,10 @@ int mol(int argc, char* argv[])
         cout << "ok 12" << endl;
       else
         cout << "not ok 12 # failed empty InChI" << endl;
+      cout << "1..12\n";
     }
+  else
+    cout << "1..11\n"; // total number of tests for Perl's "prove" tool
 
-  OBMol testMolFormula;
-  string formula("C6");
-  testMolFormula.SetFormula(formula);
-  if ( testMolFormula.GetFormula() == formula ) {
-     cout << "ok 13" << endl;
-  } else {
-    cout << "not ok 13 # SetFormula "<< endl;
-  }
-  // Reset the formula to test for a double delete error
-  testMolFormula.SetFormula(formula);
-  
-  // Test molecular formulas with large atomic numbers
-  OBMol testLgAtNo;
-  testLgAtNo.BeginModify();
-  OBAtom *lgAtom = testLgAtNo.NewAtom();
-  lgAtom->SetAtomicNum(118);
-  // Undefined atomic numbers should be ignored with an obWarning instead of segfault
-  lgAtom = testLgAtNo.NewAtom();
-  lgAtom->SetAtomicNum(200);
-  lgAtom = testLgAtNo.NewAtom();
-  lgAtom->SetAtomicNum(1);
-  lgAtom->SetIsotope(2);
-  testLgAtNo.EndModify();
-  if ( testLgAtNo.GetFormula() == "DOg" ) {
-    cout << "ok 14" << endl;
-  } else {
-    cout << "not ok 14" << endl;
-  }
-  
-
-  double dihedral = CalcTorsionAngle(vector3(-1., -1.,  0.),
-                                     vector3(-1.,  0.,  0.),
-                                     vector3( 1.,  0.,  0.),
-                                     vector3( 1.,  1.,  0.));
-
-  double dihedral_error = fabs(dihedral) - 180.0;
-
-  if (fabs(dihedral_error) < 0.001) {
-      std::cout << "ok 15 " << dihedral_error << std::endl;
-  } else {
-
-      std::cout << "not ok 15 # CalcTorsionAngle " << dihedral << "!= 180.0" << std::endl;
-  }
-
-  cout << "1..15\n"; // total number of tests for Perl's "prove" tool
   return(0);
 }

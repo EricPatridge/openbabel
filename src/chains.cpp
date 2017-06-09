@@ -40,7 +40,7 @@ using namespace std;
 //////////////////////////////////////////////////////////////////////////////
 
 //! The first available index for actual residues
-//! 0, 1, 2 reserved for UNK, HOH, UNL
+//! 0, 1, 2 reserved for UNK, HOH, LIG
 #define RESIDMIN       4
 //! The maximum number of residue IDs for this code
 #define RESIDMAX       64
@@ -50,7 +50,7 @@ using namespace std;
 static char ChainsResName[RESIDMAX][4] = {
   /*0*/ "UNK",
   /*1*/ "HOH",
-  /*2*/ "UNL",
+  /*2*/ "LIG",
   /*3*/ "ACE"
 };
 
@@ -1035,7 +1035,7 @@ namespace OpenBabel
             hetflags[idx2] = true;
             chains[idx2] = ' ';
             resnos[idx2] = resno;
-            resids[idx2] = 2; // unknown ligand
+            resids[idx2] = 2; // LIG
           }
         }
 
@@ -1104,7 +1104,7 @@ namespace OpenBabel
           if (size == 1 && atom->IsOxygen())
             resid = 1; /* HOH */
           else
-            resid = 2; /* Unknown ligand */
+            resid = 2; /* LIG */
 
           for (i = 0 ; i < numAtoms ; ++i) {
             if (chains[i] == ('A' + count)) {
@@ -1273,7 +1273,7 @@ namespace OpenBabel
                         result = Match3Constraints(pep,na,nb,nc);
                       else if (count == 2)
                         result = Match2Constraints(pep,na,nb);
-                      else if (count == 1)
+                      else // count == 1
                         result = MatchConstraint(na,pep->n1);
 
                       if(result == false)
@@ -1432,7 +1432,7 @@ namespace OpenBabel
             if (!visits[j])
               TracePeptideChain(mol,j,r);
           }
-        else if (count == 2)
+        else /* count == 2 */
           {
             if ( bitmasks[na] & BitCAll )
               {

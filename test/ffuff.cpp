@@ -34,28 +34,20 @@ using namespace std;
 using namespace OpenBabel;
 
 #ifdef TESTDATADIR
-  string dtestdatadir = TESTDATADIR;
-  string dresults_file = dtestdatadir + "uffresults.txt";
-  string dmolecules_file = dtestdatadir + "forcefield.sdf";
+  string testdatadir = TESTDATADIR;
+  string results_file = testdatadir + "uffresults.txt";
+  string molecules_file = testdatadir + "forcefield.sdf";
 #else
-  string dresults_file = "files/uffresults.txt";
-  string dmolecules_file = "files/forcefield.sdf";
+  string results_file = "files/uffresults.txt";
+  string molecules_file = "files/forcefield.sdf";
 #endif
 
 void GenerateEnergies();
 
-int ffuff(int argc, char* argv[])
+int main(int argc,char *argv[])
 {
-  int defaultchoice = 1;
-  
-  int choice = defaultchoice;
-
-  if (argc > 1) {
-    if(sscanf(argv[1], "%d", &choice) != 1) {
-      printf("Couldn't parse that input as a number\n");
-      return -1;
-    }
-  }
+  // turn off slow sync with C-style output (we don't use it anyway).
+  std::ios::sync_with_stdio(false);
 
   // Define location of file formats for testing
   #ifdef FORMATDIR
@@ -64,25 +56,34 @@ int ffuff(int argc, char* argv[])
     putenv(env);
   #endif
 
-  if (choice == 99)
+  if (argc != 1)
     {
-      GenerateEnergies();
-      return 0;
+      if (strncmp(argv[1], "-g", 2))
+        {
+          cout << "Usage: ffuff" << endl;
+          cout << "   Tests Open Babel UFF force field implementation." << endl;
+          return 0;
+        }
+      else
+        {
+          GenerateEnergies();
+          return 0;
+        }
     }
 
   cout << "# Testing UFF Force Field..." << endl;
 
   std::ifstream mifs;
-  if (!SafeOpen(mifs, dmolecules_file.c_str()))
+  if (!SafeOpen(mifs, molecules_file.c_str()))
     {
-      cout << "Bail out! Cannot read file " << dmolecules_file << endl;
+      cout << "Bail out! Cannot read file " << molecules_file << endl;
       return -1; // test failed
     }
 
   std::ifstream rifs;
-  if (!SafeOpen(rifs, dresults_file.c_str()))
+  if (!SafeOpen(rifs, results_file.c_str()))
     {
-      cout << "Bail out! Cannot read file " << dresults_file << endl;
+      cout << "Bail out! Cannot read file " << results_file << endl;
       return -1; // test failed
     }
 
@@ -158,11 +159,11 @@ int ffuff(int argc, char* argv[])
 void GenerateEnergies()
 {
   std::ifstream ifs;
-  if (!SafeOpen(ifs, dmolecules_file.c_str()))
+  if (!SafeOpen(ifs, molecules_file.c_str()))
     return;
 
   std::ofstream ofs;
-  if (!SafeOpen(ofs, dresults_file.c_str()))
+  if (!SafeOpen(ofs, results_file.c_str()))
     return;
 
   OBMol mol;

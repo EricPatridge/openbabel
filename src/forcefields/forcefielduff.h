@@ -98,8 +98,6 @@ namespace OpenBabel
     bool SetTypes();
     //!  Fill OBFFXXXCalculation vectors
     bool SetupCalculations();
-    //! Setup pointers in OBFFXXXCalculation vectors
-    bool SetupPointers();
     bool SetupVDWCalculation(OBAtom *a, OBAtom *b, OBFFVDWCalculationUFF &vdwcalc);
     //!  By default, electrostatic terms are disabled
     //!  This is discouraged, since the parameterization is not designed for it

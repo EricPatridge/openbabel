@@ -165,7 +165,7 @@ bool ThermoFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)
   }
   ostream &ofs = *pConv->GetOutStream();
   unsigned int i;
-#if defined(_MSC_VER) && (_MSC_VER < 1900)
+#ifdef _MSC_VER
   unsigned oldf = _set_output_format(_TWO_DIGIT_EXPONENT);
 #endif
   string formula = pmol->GetSpacedFormula();
@@ -207,9 +207,7 @@ bool ThermoFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)
   ofs << "                   4\n";
 
 #ifdef _MSC_VER
-#if _MSC_VER < 1900
   _set_output_format(oldf);
-#endif
 #endif
 
   return true;

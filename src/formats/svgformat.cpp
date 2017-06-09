@@ -113,8 +113,6 @@ public:
       "    but it is if the rows and columns have been specified as 1: ``-xr1 -xc1``\n"
       " x omit XML declaration (not displayed in GUI)\n"
       "    Useful if the output is to be embedded in another xml file.\n"
-      " X All atoms are explicitly declared \n"
-      "    Useful if we don't want any extra hydrogens drawn to fill the valence.\n"
       " A display aliases, if present\n"
       "    This applies to structures which have an alternative, usually\n"
       "    shorter, representation already present. This might have been input\n"
@@ -127,10 +125,7 @@ public:
       "    would add a aliases COOH and CHO to represent the carboxyl and\n"
       "    aldehyde groups and would display them as such in the svg diagram.\n"
       "    The aliases which are recognized are in data/superatom.txt, which\n"
-      "    can be edited.\n"
-      " S Ball and stick depiction of molecules\n"
-      "    Depicts the molecules as balls and sticks instead of the\n"
-      "    normal line style.\n\n"
+      "    can be edited.\n\n"
 
 
       "If the input molecule(s) contain explicit hydrogen, you could consider\n"
@@ -158,9 +153,8 @@ public:
   bool WriteMolecule(OBBase* pOb, OBConversion* pConv);
 
 private:
-  bool EmbedCML(OBMol* pmol, OBConversion* pConv, ostream* ofs);
+  bool EmbedCML(OBMol* pmol, OBConversion* pConv);
   bool EmbedScript(ostream& ofs);
-  bool WriteSVG(OBConversion* pConv, vector<OBBase*>& molecules);
 private:
   int _ncols, _nrows, _nmax;
   vector<OBBase*> _objects;
@@ -190,7 +184,7 @@ bool SVGFormat::WriteChemObject(OBConversion* pConv)
     _objects.clear();
     _nmax=0;
 
-    pConv->AddOption("svgbswritechemobject"); // to show WriteMolecule that this function has been called
+    pConv->AddOption("svgwritechemobject"); // to show WriteMolecule that this function has been called
     const char* pc = pConv->IsOption("c");
     //alternative for babel because -xc cannot take a parameter, because some other format uses it
     //similarly for -xr -xp
@@ -210,6 +204,16 @@ bool SVGFormat::WriteChemObject(OBConversion* pConv)
     const char* pmax =pConv->IsOption("N");
     if(pmax)
       _nmax = atoi(pmax);
+
+/*
+    _ptext = dynamic_cast<OBText*>(pOb);
+    if(_ptext)
+    {
+      pConv->AddOption("x");//omit XML header
+      _textpos = 0;
+      return true;
+    }
+*/
   }
 
   OBMoleculeFormat::DoOutputOptions(pOb, pConv);
@@ -242,11 +246,35 @@ bool SVGFormat::WriteChemObject(OBConversion* pConv)
 
     //output all collected molecules
     unsigned int n=0;
-
-    ret = WriteSVG(pConv, _objects);
-
-    //delete all the molecules
+/*
+    if(_ptext)
+    {
+      _textpos =0;
+      //Output the text up to the first insertion point, or all of it if there is no insertion point.
+      *pConv->GetOutStream() << _ptext->GetText(_textpos);
+    }
+*/
     vector<OBBase*>::iterator iter;
+    for(iter=_objects.begin(); ret && iter!=_objects.end(); ++iter)
+    {
+      //need to manually set these to mimic normal conversion
+      pConv->SetOutputIndex(++n);
+      pConv->SetLast(n==_objects.size());
+
+      ret=WriteMolecule(*iter, pConv);
+/*
+      //If there is a subsequent insertion point, output text up to it and update _textpos.
+      //If there is not, do nothing.
+      if(_ptext)
+        *pConv->GetOutStream() << _ptext->GetText(_textpos, true);
+*/
+    }
+/*
+    //Output remaining text
+    if(_ptext)
+      *pConv->GetOutStream() << _ptext->GetText(_textpos);
+*/
+    //delete all the molecules
     for(iter=_objects.begin();iter!=_objects.end(); ++iter)
       delete *iter;
     delete _ptext;//delete text, NULL or not
@@ -255,6 +283,10 @@ bool SVGFormat::WriteChemObject(OBConversion* pConv)
     _ptext = NULL;
     _nmax = _ncols = _nrows = 0;
   }
+  //OBConversion decrements OutputIndex when returns false because it thinks it is an error
+  //So we compensate.
+  if(!ret || nomore)
+    pConv->SetOutputIndex(pConv->GetOutputIndex()+1);
   return ret && !nomore;
 }
 ////////////////////////////////////////////////////////////////
@@ -263,18 +295,7 @@ bool SVGFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)
   OBMol* pmol = dynamic_cast<OBMol*>(pOb);
   if(!pmol)
     return false;
-  _objects.clear();
-  _nmax =_nrows = _ncols = 1;
-  _objects.push_back(pOb);
-  bool ret = WriteSVG(pConv,_objects);
-  _objects.clear();
-  return true;
-}
-
-bool SVGFormat::WriteSVG(OBConversion* pConv, vector<OBBase*>& molecules)
-{
-
-  bool ret=true;
+  ostream &ofs = *pConv->GetOutStream();
 
   //Check for option for single mol in fixed size image
   const char* fixedpx = pConv->IsOption("P");
@@ -282,17 +303,42 @@ bool SVGFormat::WriteSVG(OBConversion* pConv, vector<OBBase*>& molecules)
     fixedpx= pConv->IsOption("px", OBConversion::GENOPTIONS);
   //If WriteMolecule called directly, e.g. from OBConversion::Write()
   //the default mode is a fixed image size of 200px square
-  if(!fixedpx && molecules.size()==1)
+  if(!fixedpx && !pConv->IsOption("svgwritechemobject"))
     fixedpx = "200";
   if(fixedpx)
   {
     _nmax = _nrows = _ncols = 1;
     pConv->AddOption("j");
+    pConv->SetLast(true);
+    pConv->SetOutputIndex(1);
   }
 
-  ostream &ofs = *pConv->GetOutStream();
-
-  bool hasTable = (_nrows>1) || (_ncols>1);
+  //*** Coordinate generation ***
+  //Generate coordinates only if no existing 2D coordinates
+  if( (pConv->IsOption("y") || !pmol->Has2D(true)) && !pConv->IsOption("n") )
+  {
+    OBOp* pOp = OBOp::FindType("gen2D");
+    if(!pOp)
+    {
+      obErrorLog.ThrowError("SVGFormat", "gen2D not found", obError, onceOnly);
+      return false;
+    }
+    if(!pOp->Do(pmol))
+    {
+      obErrorLog.ThrowError("SVGFormat", string(pmol->GetTitle()) + "- Coordinate generation unsuccessful", obError);
+      return false;
+    }
+  }
+  if(!pmol->Has2D() && pmol->NumAtoms()>1)//allows 3D coordinates (if passed by -xn above)
+  {
+    string mes("Molecule ");
+    mes += pmol->GetTitle();
+    mes += " needs 2D coordinates to display in SVGformat";
+    obErrorLog.ThrowError("SVGFormat", mes, obError);
+    return false;
+  }
+  
+  bool hasTable = (_nrows || _ncols);
 
   bool transparent=false;
   string background, bondcolor;
@@ -309,128 +355,89 @@ bool SVGFormat::WriteSVG(OBConversion* pConv, vector<OBBase*>& molecules)
     bondcolor = bcol;
   if(bg && *bg)
     background = bg;
-
-  if(!pConv->IsOption("x"))
-  ofs << "<?xml version=\"1.0\"?>\n";
-
-  ofs << "<svg version=\"1.1\" id=\"topsvg\"\n"
-         "xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\"\n"
-         "xmlns:cml=\"http://www.xml-cml.org/schema\" ";
-  double vbwidth=100, vbheight=100;
-  if (_nrows>_ncols)
-    vbwidth = (100*_ncols)/_nrows;
-  else if(_ncols>_nrows)
-    vbheight = (100*_nrows)/_ncols;
-
-  if(fixedpx)//fixed size image
-    ofs << "x=\"0\" y=\"0\" width=\"" << fixedpx << "px\" height=\"" << fixedpx <<"px\" ";
-  else
-    ofs << "x=\"0\" y=\"0\" width=\"100%\" height=\"100%\" ";
-
-  ofs << "viewBox=\"0 0 " << vbwidth << ' ' << vbheight << "\">\n";
-
-  if (hasTable)
-    ofs << "<title>Multiple Molecules - Open Babel Depiction</title>\n";
-  else if(molecules.size() == 1)
-    ofs << "<title>" << molecules[0]->GetTitle() << " - Open Babel Depiction</title>\n";
-
-  // Draw the background unless transparent
-  if(!transparent)
-    ofs << "<rect x=\"0\" y=\"0\" width=\"" << vbwidth << "\" height=\"" << vbheight
-        << "\" fill=\"" << background << "\"/>\n";
-
-  unsigned opts = 0;
-  if(pConv->IsOption("u"))
-    opts |= OBDepict::bwAtoms;
-  if(!pConv->IsOption("U"))
-   opts |= OBDepict::internalColor;
-  if(!pConv->IsOption("C"))
-    opts |= OBDepict::drawTermC;// on by default
-  if(pConv->IsOption("a"))
-    opts |= OBDepict::drawAllC;
-  if(pConv->IsOption("W"))
-    opts |= OBDepict::noWedgeHashGen;
-  if(pConv->IsOption("s"))
-   opts |= OBDepict::asymmetricDoubleBond;
-  if(pConv->IsOption("X"))
-    opts |= OBDepict::allExplicit;
-
-  bool balldepict = false;
-  if(pConv->IsOption("S")) {
-    balldepict = true;
-  }
-
-  double factor = 1.0;
-  int nc = _ncols ? _ncols : 1;
-  int nr = (_nrows ? _nrows : 1);
-  double cellsize = 100. / std::max(nc, nr);
-
-  stringstream molfs;
-  std::set<ColorGradient> gradients;
-
-  OBOp* pOp = OBOp::FindType("gen2D");
-  if(!balldepict && !pOp)
+  
+  if(pConv->GetOutputIndex()==1 || fixedpx)
   {
-    obErrorLog.ThrowError("SVGFormat", "gen2D not found", obError, onceOnly);
-    return false;
-  }
-
-  vector<OBBase*>::iterator iter;
-  int indx = 0;
-  for(iter=_objects.begin(); ret && iter!=_objects.end(); ++iter,++indx)
-  {
-    OBMol* pmol = dynamic_cast<OBMol*>(*iter);
-
-    if (!pmol)
-      continue;
-    //*** Coordinate generation ***
-    //Generate coordinates only if no existing 2D coordinates and we're not doing ball-and-stick style
-    if( (pConv->IsOption("y") || !pmol->Has2D(true)) && (!pConv->IsOption("n") && !balldepict))
-    {
-      if(!pOp->Do(pmol))
-      {
-        obErrorLog.ThrowError("SVGFormat", string(pmol->GetTitle()) + "- Coordinate generation unsuccessful", obError);
-        return false;
-      }
-    }
-    if(!pmol->Has2D() && pmol->NumAtoms()>1)//allows 3D coordinates (if passed by -xn above)
-    {
-      string mes("Molecule ");
-      mes += pmol->GetTitle();
-      mes += " needs 2D coordinates to display in SVGformat";
-      obErrorLog.ThrowError("SVGFormat", mes, obError);
-      return false;
-    }
-    double innerX = 0.0;
-    double innerY = 0.0;
+    //For the first molecule...
     if(hasTable)
     {
-      //*** Parameter for inner svg ***
-      innerX  = (indx % nc) * cellsize;
-      innerY  = (indx / nc) * cellsize;
+      //multiple molecules - use a table
+      //Outer svg has viewbox for 0 0 100 100 or adjusted for table shape,
+      //and no width or height - it uses the whole of its containing element.
+      //Inner svg with width, height, x, y of table cell,
+      //and viewbox to match molecule min and max x and y
+      if(!pConv->IsOption("x"))
+        ofs << "<?xml version=\"1.0\"?>\n";
 
-      // Change the background in this cell if the condition in the first
-      // parameter of  the -xh option is met. Use a default color if
-      // the highlight color is not specified in the second parameter.
-      const char* htxt = pConv->IsOption("h");
-      if(htxt)
-      {
-        vector<string> vec;
-        tokenize(vec, htxt);
-        string highlight(vec.size()>1 ? vec[1] : "#f4f0ff");
-        std::istringstream conditionText(vec[0]);
-        if(OBDescriptor::FilterCompare(*iter, conditionText, false))
-          //Still in outer <svg>, unfortunately
-          molfs << "<rect x=\"" << innerX << "\" y=\"" << innerY
-              << "\" width=\"" << cellsize << "\" height=\"" << cellsize
-              << "\" fill=\"" << highlight << "\"/>\n";
-      }
+      ofs << "<svg version=\"1.1\" id=\"topsvg\"\n"
+             "xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\"\n"
+             "xmlns:cml=\"http://www.xml-cml.org/schema\" ";
+
+      //*** Outer viewbox ***
+      double vbwidth=100, vbheight=100;
+      if (_nrows>_ncols)
+        vbwidth = (100*_ncols)/_nrows;
+      else if(_ncols>_nrows)
+        vbheight = (100*_nrows)/_ncols;
+
+      if(fixedpx)//fixed size image
+        ofs << "x=\"0\" y=\"0\" width=\"" << fixedpx << "px\" height=\"" << fixedpx <<"px\" ";
+      else
+        ofs << "x=\"0\" y=\"0\" width=\"100%\" height=\"100%\" ";
+      
+      ofs << "viewBox=\"0 0 " << vbwidth << ' ' << vbheight << "\">\n";
+
+      ofs << "<title>OBDepict</title>\n";
+      // Draw the background unless transparent
+      if(!transparent)
+        ofs << "<rect x=\"0\" y=\"0\" width=\"" << vbwidth << "\" height=\"" << vbheight
+            << "\" fill=\"" << background << "\"/>\n";
+    }
+  }
+
+  //All mols
+  double cellsize;
+  if(hasTable)
+  {
+    //*** Parameter for inner svg ***
+    int nc = _ncols ? _ncols : 1;
+    int nr = (_nrows ? _nrows : 1);
+    cellsize = 100. / std::max(nc, nr);
+    int indx = pConv->GetOutputIndex() - 1;
+    double innerX  = (indx % nc) * cellsize;
+    double innerY  = (indx / nc) * cellsize;
+
+    // Change the background in this cell if the condition in the first
+    // parameter of  the -xh option is met. Use a default color if
+    // the highlight color is not specified in the second parameter.
+    const char* htxt = pConv->IsOption("h");
+    if(htxt)
+    {
+      vector<string> vec;
+      tokenize(vec, htxt);
+      string highlight(vec.size()>1 ? vec[1] : "#f4f0ff");
+      std::istringstream conditionText(vec[0]);
+      if(OBDescriptor::FilterCompare(pOb, conditionText, false))
+        //Still in outer <svg>, unfortunately
+        ofs << "<rect x=\"" << innerX << "\" y=\"" << innerY
+            << "\" width=\"" << cellsize << "\" height=\"" << cellsize
+            << "\" fill=\"" << highlight << "\"/>\n";
     }
 
-    SVGPainter painter(molfs, &gradients, true, cellsize, cellsize);
-    OBDepict depictor(&painter, balldepict);
+    //*** Write molecule name ***
+    if(!pConv->IsOption("d"))
+      ofs << "<text text-anchor=\"middle\" font-size=\"" << 0.06*cellsize << "\""
+      << " fill =\"" << bondcolor << "\" font-family=\"sans-serif\"\n"
+      << "x=\"" << innerX + cellsize * 0.5 << "\" y=\"" << innerY + cellsize - 2.0/nr << "\" >"
+      << pmol->GetTitle() << "</text>\n";
 
-    depictor.SetOption(opts);
+    SVGPainter painter(*pConv->GetOutStream(), true, cellsize,cellsize,innerX,innerY);
+    OBDepict depictor(&painter);
+
+    if(!pConv->IsOption("C"))
+      depictor.SetOption(OBDepict::drawTermC);// on by default
+    if(pConv->IsOption("a"))
+      depictor.SetOption(OBDepict::drawAllC);
 
     if(pConv->IsOption("A"))
     {
@@ -445,65 +452,122 @@ bool SVGFormat::WriteSVG(OBConversion* pConv, vector<OBBase*>& molecules)
     else
       painter.SetPenWidth(2);
 
-    molfs << "<g transform=\"translate(" << innerX << "," << innerY << ")\">\n";
+    //No element-specific atom coloring if requested
+    if(pConv->IsOption("u"))
+      depictor.SetOption(OBDepict::bwAtoms);
+    if(!pConv->IsOption("U"))
+      depictor.SetOption(OBDepict::internalColor);
+    if(pConv->IsOption("s"))
+      depictor.SetOption(OBDepict::asymmetricDoubleBond);
 
-    ret = depictor.DrawMolecule(pmol);
-
+    depictor.DrawMolecule(pmol);
 
     //Draw atom indices if requested
     if(pConv->IsOption("i"))
       depictor.AddAtomLabels(OBDepict::AtomIndex);
 
-    painter.EndCanvas();
+    //Embed CML of molecule if requested
+    if(pConv->IsOption("e"))
+      EmbedCML(pmol,pConv);
+  }
+  else //single molecule
+  {
+    //Nothing written until DrawMolecule call
+    //Final </svg> written at the end of this block (painter destructor)
+    //This leads to some code duplication.
+    double factor = 1.0;
+    SVGPainter painter(*pConv->GetOutStream(), false);
+    OBDepict depictor(&painter);
 
+    //Scale image by specifying the average bond length in pixels.
+    const char* ppx = pConv->IsOption("p");
+    if(!ppx)
+      ppx= pConv->IsOption("px", OBConversion::GENOPTIONS);
+    if(ppx)
+    {
+      double oldblen = depictor.GetBondLength();
+      double newblen = atof(ppx);
+      depictor.SetBondLength(newblen);
+      factor = newblen / oldblen;
+      //Scale bondspacing and font size by same factor
+      depictor.SetBondSpacing(depictor.GetBondSpacing() * factor);
+      depictor.SetFontSize((int)(depictor.GetFontSize() * factor));
+    }
+
+    if(pConv->IsOption("W"))
+      depictor.SetOption(OBDepict::noWedgeHashGen);
+    if(!pConv->IsOption("C"))
+      depictor.SetOption(OBDepict::drawTermC);// on by default
+    if(pConv->IsOption("a"))
+      depictor.SetOption(OBDepict::drawAllC);
+
+    if(pConv->IsOption("A"))
+    {
+      AliasData::RevertToAliasForm(*pmol);
+      depictor.SetAliasMode();
+    }
+
+    painter.SetFontFamily("sans-serif");
+    painter.SetPenColor(OBColor(bondcolor));
+    depictor.SetBondColor(bondcolor);
+    painter.SetFillColor(OBColor(background));
+    if(pConv->IsOption("t"))
+      painter.SetPenWidth(4);
+    else
+      painter.SetPenWidth(1);
+
+    //No element-specific atom coloring if requested
+    if(pConv->IsOption("u"))
+      depictor.SetOption(OBDepict::bwAtoms);
+    if(!pConv->IsOption("U"))
+      depictor.SetOption(OBDepict::internalColor);
+    if(pConv->IsOption("s"))
+      depictor.SetOption(OBDepict::asymmetricDoubleBond);
+
+    depictor.DrawMolecule(pmol);
+
+    //Draw atom indices if requested
+    if(pConv->IsOption("i"))
+      depictor.AddAtomLabels(OBDepict::AtomIndex);
+
+
+    //*** Write molecule name ***
+    if(!pConv->IsOption("d"))
+      ofs << "<text font-size=\"" << 18 * factor  << "\""
+      << " fill =\"" << bondcolor << "\" font-family=\"sans-serif\"\n"
+      << "x=\"" << 10 * factor << "\" y=\"" << 20 * factor << "\" >"
+      << pmol->GetTitle() << "</text>\n";
+
+    //*** Write page title name ***
+    ofs << "<title>" << pmol->GetTitle() << " - OBDepict</title>\n";
 
     //Embed CML of molecule if requested
     if(pConv->IsOption("e"))
-      EmbedCML(pmol, pConv, &molfs);
-
-    molfs <<"</g>\n";
-
-    //*** Write molecule name ***
-    if(!pConv->IsOption("d")) {
-      if(hasTable) {
-        molfs << "<text text-anchor=\"middle\" font-size=\"" << 0.06*cellsize << "\""
-        << " fill =\"" << bondcolor << "\" font-family=\"sans-serif\"\n"
-        << "x=\"" << innerX + cellsize * 0.5 << "\" y=\"" << innerY + cellsize - 2.0/nr << "\" >"
-        << pmol->GetTitle() << "</text>\n";
-      } else {
-        molfs << "<text font-size=\"" << 18 * factor  << "\""
-        << " fill =\"" << bondcolor << "\" font-family=\"sans-serif\"\n"
-        << "x=\"" << 10 * factor << "\" y=\"" << 20 * factor << "\" >"
-        << pmol->GetTitle() << "</text>\n";
-      }
-    }
+      EmbedCML(pmol,pConv);
   }
 
-  // finally write svg defs
-  SVGPainter painter(ofs, &gradients, true, cellsize,cellsize);
-  painter.WriteDefs();
-
-  // and stream back all molecule data
-  ofs << molfs.str();
-
-  //Draw grid lines
-  if(hasTable && pConv->IsOption("l"))
+  if(hasTable && pConv->IsLast())
   {
-    for(int i=1; i<_nrows; ++i)
-      ofs << " <line  stroke=\"gray\" stroke-width=\"0.1\" x1=\"0\" x2=\"100\""
-          << " y1=\""  << i*cellsize << "\" y2=\""  << i*cellsize << "\"/>\n";
-    for(int i=1; i<_ncols; ++i)
-      ofs << " <line  stroke=\"gray\" stroke-width=\"0.1\" y1=\"0\" y2=\"100\""
-          << " x1=\""  << i*cellsize << "\" x2=\""  << i*cellsize << "\"/>\n";
+    //Draw grid lines
+    if(_nrows && _ncols && pConv->IsOption("l"))
+    {
+      for(int i=1; i<_nrows; ++i)
+        ofs << " <line  stroke=\"gray\" stroke-width=\"0.1\" x1=\"0\" x2=\"100\""
+            << " y1=\""  << i*cellsize << "\" y2=\""  << i*cellsize << "\"/>\n";
+      for(int i=1; i<_ncols; ++i)
+        ofs << " <line  stroke=\"gray\" stroke-width=\"0.1\" y1=\"0\" y2=\"100\""
+            << " x1=\""  << i*cellsize << "\" x2=\""  << i*cellsize << "\"/>\n";
+    }
+
+    //Insert javascript for zooming and panning
+    if(!pConv->IsOption("j"))
+      EmbedScript(ofs);
+
+    ofs << "</svg>\n" << endl;//Outer svg
   }
-
-  //Insert javascript for zooming and panning
-  if(!pConv->IsOption("j"))
-    EmbedScript(ofs);
-
-  ofs << "</svg>\n";
-return ret;
+  return !fixedpx; // return false with fixed size image because only 1 mol
 }
+
 
 /////////////////////////////////////////////////////////////
 //returns true if the file "svgformat.script" was inserted into the output
@@ -517,7 +581,7 @@ bool SVGFormat::EmbedScript(ostream& ofs)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
-bool SVGFormat::EmbedCML(OBMol* pmol, OBConversion* pConv, ostream* ofs)
+bool SVGFormat::EmbedCML(OBMol* pmol, OBConversion* pConv)
 {
   OBConversion CMLConv(*pConv);
   if(!CMLConv.SetOutFormat("cml"))
@@ -529,7 +593,7 @@ bool SVGFormat::EmbedCML(OBMol* pmol, OBConversion* pConv, ostream* ofs)
   CMLConv.AddOption("N",OBConversion::OUTOPTIONS,"cml");
   CMLConv.AddOption("p",OBConversion::OUTOPTIONS); //include properties
 //  CMLConv.AddOption("x",OBConversion::OUTOPTIONS);
-  return CMLConv.Write(pmol, ofs);
+  return CMLConv.Write(pmol);
 }
 
 /*
@@ -566,7 +630,7 @@ Internet Explorer 9, to zoom with the mouse wheel and pan by dragging.
       starty = evt.clientY;
     }
     svgEl.onmousemove=function(evt) {
-      if(startx!=0 && starty!=0
+      if(startx!=0 && starty!=0 
         && ((evt.clientX - startx)*(evt.clientX - startx)+(evt.clientY - starty)*(evt.clientY - starty)>100))
       {
         var vbtext = svgEl.getAttributeNS(null,"viewBox");
@@ -578,7 +642,7 @@ Internet Explorer 9, to zoom with the mouse wheel and pan by dragging.
         startx = evt.clientX;
         starty = evt.clientY;
       }
-    }
+    } 
     svgEl.onmouseup=function() {
       startx=0;
       starty=0;
@@ -597,3 +661,4 @@ with the real script in morescript.js.
 */
 
 }//namespace
+

@@ -995,11 +995,10 @@ namespace OpenBabel
 
     IF_OBFF_LOGLVL_LOW {
       OBFFLog("\nA T O M   T Y P E S\n\n");
-      OBFFLog("IDX\tTYPE\tRING\n");
+      OBFFLog("IDX\tTYPE\n");
 
       FOR_ATOMS_OF_MOL (a, _mol) {
-        snprintf(_logbuf, BUFF_SIZE, "%d\t%s\t%s\n", a->GetIdx(), a->GetType(),
-	  (a->IsInRing() ? (a->IsAromatic() ? "AR" : "AL") : "NO"));
+        snprintf(_logbuf, BUFF_SIZE, "%d\t%s\n", a->GetIdx(), a->GetType());
         OBFFLog(_logbuf);
       }
 

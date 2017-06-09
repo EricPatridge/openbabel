@@ -138,7 +138,7 @@ namespace OpenBabel
 
     for ( i = 0 ; i < rules.size() ; i++ )
       {
-        strncpy(buffer, rules[i].c_str(), BUFF_SIZE - 1); // leave space for null termination
+        strncpy(buffer, rules[i].c_str(), BUFF_SIZE);
         if (buffer[0] != '#')
           {
             tokenize(vs,buffer," \t\n");
@@ -267,8 +267,12 @@ namespace OpenBabel
             errorMsg << "Unable to find type of feature passed in " << endl;
             errorMsg << "Feature passed in is " << type << endl;
             obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obInfo);
+            //	  exit(-1);
           }
-        result = 7;
+        else
+          {
+            result = 7;
+          }
       }
     return(result);
   }

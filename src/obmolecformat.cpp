@@ -31,8 +31,8 @@ namespace OpenBabel
 
   bool OBMoleculeFormat::ReadChemObjectImpl(OBConversion* pConv, OBFormat* pFormat)
   {
-    std::istream *ifs = pConv->GetInStream();
-    if (!ifs || !ifs->good())
+    std::istream &ifs = *pConv->GetInStream();
+    if (!ifs.good())
       return false;
 
     OBMol* pmol = new OBMol;
@@ -439,7 +439,7 @@ namespace OpenBabel
     //Output all the constituent molecules of the reaction
 
     //Collect the molecules first, just for convenience
-    vector<obsharedptr<OBMol> > mols;
+    vector<shared_ptr<OBMol> > mols;
     unsigned i;
     for(i=0;i<pReact->NumReactants();i++)
       mols.push_back(pReact->GetReactant(i));

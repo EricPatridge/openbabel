@@ -16,14 +16,10 @@ else(MINIMAL_BUILD)
         obprop
         obrotamer
         obrotate
-        obsym
-        obtautomer
-        obthermo
      )
   if(EIGEN3_FOUND)
     set(tools
         ${tools}
-        obdistgen
         obrms
        )
   endif()
@@ -39,8 +35,8 @@ if(BUILD_SHARED)
     target_link_libraries(${tool} ${BABEL_LIBRARY})
     install(TARGETS ${tool}
                     RUNTIME DESTINATION bin
-                    LIBRARY DESTINATION lib${LIB_SUFFIX}
-                    ARCHIVE DESTINATION lib${LIB_SUFFIX}
+                    LIBRARY DESTINATION lib
+                    ARCHIVE DESTINATION lib
     )
   endforeach(tool)
 
@@ -54,8 +50,8 @@ if(BUILD_SHARED)
     target_link_libraries(obspectrophore ${BABEL_LIBRARY})
     install(TARGETS obspectrophore
                     RUNTIME DESTINATION bin
-                    LIBRARY DESTINATION lib${LIB_SUFFIX}
-                    ARCHIVE DESTINATION lib${LIB_SUFFIX}
+                    LIBRARY DESTINATION lib
+                    ARCHIVE DESTINATION lib
     )
 
     # obgrep -- requires getopt
@@ -67,8 +63,8 @@ if(BUILD_SHARED)
       target_link_libraries(obgrep ${BABEL_LIBRARY})
       install(TARGETS obgrep
                       RUNTIME DESTINATION bin
-                      LIBRARY DESTINATION lib${LIB_SUFFIX}
-                      ARCHIVE DESTINATION lib${LIB_SUFFIX}
+                      LIBRARY DESTINATION lib
+                      ARCHIVE DESTINATION lib
       )
   endif(NOT MINIMAL_BUILD)
 
@@ -82,10 +78,10 @@ else(BUILD_SHARED)
   # Set libs to imported openbabel target
   set(libs openbabel)
   if(WITH_STATIC_INCHI)
-    set(libs ${libs} ${INCHI_LIBRARY})
+    set(libs ${libs} ${LIBXML2_LIBRARIES})
   endif()
   if(WITH_STATIC_LIBXML)
-    set(libs ${libs} ${LIBXML2_LIBRARIES})
+    set(libs ${libs} inchi)
   endif()
 
   if(NOT MSVC)
@@ -136,18 +132,15 @@ else(BUILD_SHARED)
   # build a static babel only
   add_executable(babel babel.cpp)
   target_link_libraries(babel ${libs})
-  add_executable(obabel obabel.cpp)
-  target_link_libraries(obabel ${libs})
 
   if(NOT BUILD_MIXED)
     # Prevent -Wl,-Bdynamic from being added to the end of the link line.
     set_target_properties(babel PROPERTIES LINK_SEARCH_END_STATIC TRUE)
-    set_target_properties(obabel PROPERTIES LINK_SEARCH_END_STATIC TRUE)
   endif(NOT BUILD_MIXED)
 
   install(TARGETS babel
           RUNTIME DESTINATION bin
-          LIBRARY DESTINATION lib${LIB_SUFFIX}
-          ARCHIVE DESTINATION lib${LIB_SUFFIX})
+          LIBRARY DESTINATION lib
+          ARCHIVE DESTINATION lib)
 
 endif(BUILD_SHARED)

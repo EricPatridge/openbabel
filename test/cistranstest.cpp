@@ -344,18 +344,9 @@ void test_CisTrans2()
 
 }
 
-int cistranstest(int argc, char* argv[])
-{
-  int defaultchoice = 1;
-  
-  int choice = defaultchoice;
 
-  if (argc > 1) {
-    if(sscanf(argv[1], "%d", &choice) != 1) {
-      printf("Couldn't parse that input as a number\n");
-      return -1;
-    }
-  }
+int main() 
+{
   // Define location of file formats for testing
   #ifdef FORMATDIR
     char env[BUFF_SIZE];
@@ -363,38 +354,16 @@ int cistranstest(int argc, char* argv[])
     putenv(env);
   #endif
 
-  switch(choice) {
-  case 1:
-    test_GetType();
-    break;
-  case 2:
-    test_configStruct();
-    break;
-  case 3:
-    test_IsValid();
-    break;
-  case 4:
-    test_equalsOperator();
-    break;
-  case 5:
-    test_GetSetConfig();
-    break;
-  case 6:
-    test_IsOnSameAtom1();
-    break;
-  case 7:
-    test_IsOnSameAtom2();
-    break;
-  case 8:
-    test_CisTrans1();
-    break;
-  case 9:
-    test_CisTrans2();
-    break;
-  default:
-    cout << "Test number " << choice << " does not exist!\n";
-    return -1;
-  }
+  test_GetType();
+  test_configStruct();
+  test_IsValid();
+  test_equalsOperator();
+  test_GetSetConfig();
+  testRefs();
+  test_IsOnSameAtom1();
+  test_IsOnSameAtom2();
+  test_CisTrans1();
+  test_CisTrans2();
   
   return 0;
 }

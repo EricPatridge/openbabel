@@ -41,7 +41,6 @@ GNU General Public License for more details.
 #include <locale>
 #include <limits>
 #include <typeinfo>
-#include <iterator>
 
 #include <stdlib.h>
 
@@ -154,7 +153,7 @@ namespace OpenBabel {
       if(conv.SetInFormat("smi") && conv.Read(&mol))
          // ...
       @endcode
-
+      
       An alternative way is more convenient if using bindings from another language:
       @code
       std::string SmilesString;
@@ -225,68 +224,38 @@ namespace OpenBabel {
       @endcode
   */
 
+  int OBConversion::FormatFilesLoaded = 0;
+
 //  OBFormat* OBConversion::pDefaultFormat=NULL;
 
   OBConversion::OBConversion(istream* is, ostream* os) :
-    pInput(NULL), pOutput(NULL),
     pInFormat(NULL),pOutFormat(NULL), Index(0), StartNumber(1),
     EndNumber(0), Count(-1), m_IsFirstInput(true), m_IsLast(true),
-    MoreFilesToCome(false), OneObjectOnly(false), SkippedMolecules(false),
-    inFormatGzip(false), outFormatGzip(false),
-    pOb1(NULL),wInpos(0),wInlen(0),pAuxConv(NULL)
+    MoreFilesToCome(false), OneObjectOnly(false), CheckedForGzip(false),
+    NeedToFreeInStream(false), NeedToFreeOutStream(false),
+    pOb1(NULL), pAuxConv(NULL),pLineEndBuf(NULL),wInpos(0),wInlen(0)
   {
-   	SetInStream(is);
-   	SetOutStream(os);
+    pInStream=is;
+    pOutStream=os;
+    if (FormatFilesLoaded == 0)
+      FormatFilesLoaded = LoadFormatFiles();
 
     //These options take a parameter
     RegisterOptionParam("f", NULL, 1,GENOPTIONS);
     RegisterOptionParam("l", NULL, 1,GENOPTIONS);
-  }
-
-  /// Convenience constructor.  Sets up streams from specified files.
-  /// If format can not be determined from filename, a stream is not opened.
-  OBConversion::OBConversion(string infile, string outfile):
-        pInput(NULL), pOutput(NULL),
-        pInFormat(NULL),pOutFormat(NULL), Index(0), StartNumber(1),
-        EndNumber(0), Count(-1), m_IsFirstInput(true), m_IsLast(true),
-        MoreFilesToCome(false), OneObjectOnly(false), SkippedMolecules(false),
-        inFormatGzip(false), outFormatGzip(false),
-        pOb1(NULL), wInpos(0),wInlen(0), pAuxConv(NULL)
-  {
-    //These options take a parameter
-    RegisterOptionParam("f", NULL, 1,GENOPTIONS);
-    RegisterOptionParam("l", NULL, 1,GENOPTIONS);
-
-    OpenInAndOutFiles(infile, outfile);
   }
 
   /////////////////////////////////////////////////
   OBConversion::OBConversion(const OBConversion& o)
   {
-    *this = o;
-  }
-
-
-  OBConversion& OBConversion::operator=(const OBConversion& o)
-  {
-    //the original obconversion retains ownership of any allocated streams
-    //this means if the original gets destroyed, bad things may happen
-    //by doing this first, format isn't initialized, so we add no additional filters
-    pInFormat = NULL;
-    inFormatGzip = false;
-    pOutFormat = NULL;
-    outFormatGzip = false;
-    SetInStream(o.pInput, false);
-    SetOutStream(o.pOutput, false);
-
     Index          = o.Index;
     Count          = o.Count;
     StartNumber    = o.StartNumber;
     EndNumber      = o.EndNumber;
     pInFormat      = o.pInFormat;
-    inFormatGzip   = o.inFormatGzip;
+    pInStream      = o.pInStream;
     pOutFormat     = o.pOutFormat;
-    outFormatGzip  = o.outFormatGzip;
+    pOutStream     = o.pOutStream;
     OptionsArray[0]= o.OptionsArray[0];
     OptionsArray[1]= o.OptionsArray[1];
     OptionsArray[2]= o.OptionsArray[2];
@@ -301,10 +270,11 @@ namespace OpenBabel {
     pOb1           = o.pOb1;
     ReadyToInput   = o.ReadyToInput;
     m_IsFirstInput = o.m_IsFirstInput;
-    SkippedMolecules = o.SkippedMolecules;
-    pAuxConv       = o.pAuxConv;
-
-     return *this;
+    CheckedForGzip = o.CheckedForGzip;
+    NeedToFreeInStream = o.NeedToFreeInStream;
+    NeedToFreeOutStream = o.NeedToFreeOutStream;
+    pLineEndBuf    = o.pLineEndBuf;
+    pAuxConv       = NULL;
   }
   ///////////////////////////////////////////////
 
@@ -314,11 +284,23 @@ namespace OpenBabel {
       if(pAuxConv)
       {
         delete pAuxConv;
+        //pAuxConv has copies of pInStream, NeedToFreeInStream, pOutStream, NeedToFreeOutStream
+        //and may have already deleted the streams. So do not do it again.
+        NeedToFreeInStream = NeedToFreeOutStream = false;
       }
     // Free any remaining streams from convenience functions
-    SetInStream(NULL);
-    SetOutStream(NULL);
-
+    if(pInStream && NeedToFreeInStream) {
+      delete pInStream;
+      pInStream=NULL;
+      NeedToFreeInStream = false;
+    }
+    if(pOutStream && NeedToFreeOutStream) {
+      delete pOutStream;
+      pOutStream=NULL;
+      NeedToFreeOutStream = false;
+    }
+//    delete pLineEndBuf;
+//   pLineEndBuf=NULL;
   }
   //////////////////////////////////////////////////////
 
@@ -333,156 +315,147 @@ namespace OpenBabel {
     return pFormat->RegisterFormat(ID, MIME);
   }
 
-  /// Set input stream, removing/deallocating previous stream if necessary.
-  /// If takeOwnership is true, takes responsibility for freeing pIn
-  void OBConversion::SetInStream(std::istream* pIn, bool takeOwnership)
+  //////////////////////////////////////////////////////
+  int OBConversion::LoadFormatFiles()
   {
-      //clear and deallocate any existing streams
-      for(unsigned i = 0, n = ownedInStreams.size(); i < n; i++)
-      {
-        delete ownedInStreams[i];
-      }
-      ownedInStreams.clear();
-      pInput = NULL;
-
-      if (pIn)
-      {
-          if(takeOwnership)
-              ownedInStreams.push_back(pIn);
-          pInput = pIn; //simplest case
-
-  #ifdef HAVE_LIBZ
-          if(IsOption("zin", GENOPTIONS) || inFormatGzip)
-          {
-            zlib_stream::zip_istream *zIn = new zlib_stream::zip_istream(*pInput);
-            ownedInStreams.push_back(zIn);
-            pInput = zIn;
-          }
-  #endif
-          //always transform newlines if input isn't binary/xml
-          if(pInFormat && !(pInFormat->Flags() & (READBINARY | READXML)) &&
-              pIn != &std::cin) //avoid filtering stdin as well
-          {
-            LEInStream *leIn = new LEInStream(*pInput);
-            ownedInStreams.push_back(leIn);
-            pInput = leIn;
-          }
-      }
-  }
-
-  /// Set output stream, removing/deallocating previous stream if necessary.
-  /// If takeOwnership is true, takes responsibility for freeing pOut
-  /// Be aware that if the output stream is gzipped format, then this outstream
-  /// either needs to be replaced (e.g., SetOutStream(NULL)) or the OBConversion
-  /// destroyed before the underlying outputstream is deallocated.
-  void OBConversion::SetOutStream(std::ostream* pOut, bool takeOwnership)
-  {
-    //clear and deallocate any existing streams
-    for (unsigned i = 0, n = ownedOutStreams.size(); i < n; i++)
-    {
-      delete ownedOutStreams[i];
-    }
-    ownedOutStreams.clear();
-    pOutput = NULL;
-
-    if (pOut)
-    {
-      if (takeOwnership)
-        ownedOutStreams.push_back(pOut);
-      pOutput = pOut;
-
-#ifdef HAVE_LIBZ
-
-      if (IsOption("z", GENOPTIONS) || outFormatGzip)
-      {
-        zlib_stream::zip_ostream *zOut = new zlib_stream::zip_ostream(*pOutput, true);
-        //we need to delete the zstream _before_ the underlying stream so it can add the footer
-        ownedOutStreams.insert(ownedOutStreams.begin(),zOut);
-        pOutput = zOut;
-      }
+    int count=0;
+    //	if(FormatFilesLoaded) return 0;
+    //	FormatFilesLoaded=true; //so will load files only once
+#if  defined(USING_DYNAMIC_LIBS)
+    //Depending on availablilty, look successively in
+    //FORMATFILE_DIR, executable directory,or current directory
+    string TargetDir;
+#ifdef FORMATFILE_DIR
+    TargetDir="FORMATFILE_DIR";
 #endif
+
+    DLHandler::getConvDirectory(TargetDir);
+
+    vector<string> files;
+    if(!DLHandler::findFiles(files,DLHandler::getFormatFilePattern(),TargetDir)) return 0;
+
+    vector<string>::iterator itr;
+    for(itr=files.begin();itr!=files.end();++itr)
+      {
+        if(DLHandler::openLib(*itr))
+          count++;
+        // Error handling is now handled by DLHandler itself
+        //        else
+        //          obErrorLog.ThrowError(__FUNCTION__, *itr + " did not load properly", obError);
+      }
+#else
+    count = 1; //avoid calling this function several times
+#endif //USING_DYNAMIC_LIBS
+
+    //Make instances for plugin classes defined in the data file
+    //This is hook for OBDefine, but does nothing if it is not loaded
+    //or if plugindefines.txt is not found.
+    OBPlugin* pdef = OBPlugin::GetPlugin("loaders","define");
+    if(pdef)
+    {
+      static vector<string> vec(3);
+      vec[1] = string("define");
+      vec[2] = string("plugindefines.txt");
+      pdef->MakeInstance(vec);
     }
+    return count;
   }
 
-
-
-//////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////
   /// Sets the formats from their ids, e g CML.
   /// If inID is NULL, the input format is left unchanged. Similarly for outID
   /// Returns true if both formats have been successfully set at sometime
-  bool OBConversion::SetInAndOutFormats(const char* inID, const char* outID, bool inzip, bool outzip)
+  bool OBConversion::SetInAndOutFormats(const char* inID, const char* outID)
   {
-    return SetInFormat(inID, inzip) && SetOutFormat(outID, outzip);
+    return SetInFormat(inID) && SetOutFormat(outID);
   }
   //////////////////////////////////////////////////////
 
-  bool OBConversion::SetInAndOutFormats(OBFormat* pIn, OBFormat* pOut, bool inzip, bool outzip)
+  bool OBConversion::SetInAndOutFormats(OBFormat* pIn, OBFormat* pOut)
   {
-    return SetInFormat(pIn, inzip) && SetOutFormat(pOut, outzip);
+    return SetInFormat(pIn) && SetOutFormat(pOut);
   }
   //////////////////////////////////////////////////////
-  bool OBConversion::SetInFormat(OBFormat* pIn, bool gzip)
+  bool OBConversion::SetInFormat(OBFormat* pIn)
   {
-    inFormatGzip = gzip;
     if(pIn==NULL)
       return true;
     pInFormat=pIn;
     return !(pInFormat->Flags() & NOTREADABLE);
   }
   //////////////////////////////////////////////////////
-  bool OBConversion::SetOutFormat(OBFormat* pOut, bool gzip)
+  bool OBConversion::SetOutFormat(OBFormat* pOut)
   {
-    outFormatGzip = gzip;
     pOutFormat=pOut;
     return pOut && !(pOutFormat->Flags() & NOTWRITABLE);
   }
   //////////////////////////////////////////////////////
-  bool OBConversion::SetInFormat(const char* inID, bool gzip)
+  bool OBConversion::SetInFormat(const char* inID)
   {
-    inFormatGzip = gzip;
     if(inID)
       pInFormat = FindFormat(inID);
     return pInFormat && !(pInFormat->Flags() & NOTREADABLE);
   }
   //////////////////////////////////////////////////////
 
-  bool OBConversion::SetOutFormat(const char* outID, bool gzip)
+  bool OBConversion::SetOutFormat(const char* outID)
   {
-    outFormatGzip = gzip;
     if(outID)
       pOutFormat= FindFormat(outID);
     return pOutFormat && !(pOutFormat->Flags() & NOTWRITABLE);
   }
 
   //////////////////////////////////////////////////////
-  /// Convert molecules from is into os.  If either is null, uses existing streams.
-  /// If streams are specified, they do _not_ replace any existing streams.
   int OBConversion::Convert(istream* is, ostream* os)
   {
-    StreamState savedIn, savedOut;
-    if (is)
-    {
+    if (is) {
+      pInStream=is;
+      CheckedForGzip = false; // haven't checked this for gzip yet
+    }
+    if (os) pOutStream=os;
+    ostream* pOrigOutStream = pOutStream;
+
 #ifdef HAVE_LIBZ
-      if(!inFormatGzip && pInFormat && zlib_stream::isGZip(*is))
+    zlib_stream::zip_istream *zIn;
+
+    // only try to decode the gzip stream once
+    if (!CheckedForGzip) {
+      zIn = new zlib_stream::zip_istream(*pInStream);
+      if (zIn->is_gzip()) {
+        pInStream = zIn;
+        CheckedForGzip = true;
+      }
+      else
+        delete zIn;
+    }
+#ifndef DISABLE_WRITE_COMPRESSION //Unsolved problem with compression under Windows
+    zlib_stream::zip_ostream zOut(*pOutStream);
+    if(IsOption("z",GENOPTIONS))
       {
-        inFormatGzip = true;
+        // make sure to output the header
+        zOut.make_gzip();
+        pOutStream = &zOut;
       }
 #endif
-      savedIn.pushInput(*this);
-      SetInStream(is, false);
-    }
+#endif
 
-    if (os)
-    {
-      savedOut.pushOutput(*this);
-      SetOutStream(os, false);
-    }
+    //The FilteringInputStreambuf delivers characters to the istream, pInStream,
+    //and receives characters this stream's original rdbuf.
+    //It filters them, converting CRLF and CR line endings to LF.
+    //seek and tellg requests to the stream are passed through to the original
+    //rdbuf. A FilteringInputStreambuf is installed only for appropriate formats
+    //- not for binary or XML formats - if not already present.
+    InstallStreamFilter();
 
     int count = Convert();
 
-    if(savedIn.isSet()) savedIn.popInput(*this);
-    if(savedOut.isSet()) savedOut.popOutput(*this);
-
+    pOutStream = pOrigOutStream;
+#ifdef HAVE_LIBZ
+    if ( CheckedForGzip ){ // Bug reported by Gert Thijs
+		delete zIn;
+		pInStream = is;
+	}
+#endif
     return count;
   }
 
@@ -507,7 +480,7 @@ namespace OpenBabel {
   ///
   int OBConversion::Convert()
   {
-    if(pInput==NULL)
+    if(pInStream==NULL || pOutStream==NULL)
       {
         obErrorLog.ThrowError(__FUNCTION__, "input or output stream not set", obError);
         return 0;
@@ -528,15 +501,16 @@ namespace OpenBabel {
       OneObjectOnly=true;
 
     //Input loop
-    while(ReadyToInput && pInput->good()) //Possible to omit? && pInStream->peek() != EOF
+    while(ReadyToInput && pInStream->good()) //Possible to omit? && pInStream->peek() != EOF
       {
-        if(pInput==&cin)
+        if(pInStream==&cin)
           {
-            if(pInput->peek()==-1) //Cntl Z Was \n but interfered with piping
+            if(pInStream->peek()==-1) //Cntl Z Was \n but interfered with piping
               break;
           }
         else
-          rInpos = pInput->tellg();
+          rInpos = pInStream->tellg();
+
         bool ret=false;
 #ifndef DONT_CATCH_EXCEPTIONS
        try
@@ -683,7 +657,7 @@ namespace OpenBabel {
         if(Count==(int)EndNumber)
           ReadyToInput=false; //stops any more objects being read
 
-        rInlen = pInput ? pInput->tellg() - rInpos : 0;
+        rInlen = pInStream ? pInStream->tellg() - rInpos : 0;
          // - (pLineEndBuf ? pLineEndBuf->getCorrection() : 0); //correction for CRLF
 
         if(pOb)
@@ -773,26 +747,25 @@ namespace OpenBabel {
   }
 
   /////////////////////////////////////////////////////////
-  OBFormat* OBConversion::FormatFromExt(const char* filename, bool& isgzip)
+  OBFormat* OBConversion::FormatFromExt(const char* filename)
   {
     string file = filename;
     string::size_type extPos = file.rfind('.');
-    isgzip = false;
+
     if(extPos!=string::npos // period found
        && (file.substr(extPos + 1, file.size())).find("/")==string::npos) // and period is after the last "/"
       {
         // only do this if we actually can read .gz files
+#ifdef HAVE_LIBZ
         if (file.substr(extPos) == ".gz")
-           {
-            isgzip = true;
+          {
             file.erase(extPos);
             extPos = file.rfind('.');
             if (extPos!=string::npos)
-            {
               return FindFormat( (file.substr(extPos + 1, file.size())).c_str() );
-            }
           }
         else
+#endif
           return FindFormat( (file.substr(extPos + 1, file.size())).c_str() );
       }
 
@@ -805,21 +778,9 @@ namespace OpenBabel {
     return FindFormat( file.c_str() ); //if no format found
   }
 
-  OBFormat* OBConversion::FormatFromExt(const char* filename)
-  {
-    bool isgzip;
-    return FormatFromExt(filename, isgzip);
-  }
-
   OBFormat* OBConversion::FormatFromExt(const std::string filename)
   {
-    bool gzip;
-    return FormatFromExt(filename.c_str(), gzip);
-  }
-
-  OBFormat* OBConversion::FormatFromExt(const std::string filename, bool& isgzip)
-  {
-    return FormatFromExt(filename.c_str(), isgzip);
+    return FormatFromExt(filename.c_str());
   }
 
   OBFormat* OBConversion::FormatFromMIME(const char* MIME)
@@ -830,57 +791,46 @@ namespace OpenBabel {
   bool	OBConversion::Read(OBBase* pOb, std::istream* pin)
   {
     if(pin) {
-      //for backwards compatibility, attempt to detect a gzip file
-#ifdef HAVE_LIBZ
-		if(!inFormatGzip && pInFormat && zlib_stream::isGZip(*pin))
-      {
-        inFormatGzip = true;
-      }
-#endif
-      SetInStream(pin, false);
+      pInStream=pin;
+      CheckedForGzip = false; // haven't set this stream to gzip (yet)
     }
 
+    if(!pInFormat || !pInStream) return false;
 
-    if(!pInFormat || !pInput) return false;
+#ifdef HAVE_LIBZ
+    zlib_stream::zip_istream *zIn;
 
-    //mysterious line to ensure backwards compatibility
-    //previously, even an open istream would have the gzip check applied
-    //this meant that a stream at the eof position would end up in an error state
-    //code has come to depend on this behavior
-    if(pInput->eof()) pInput->get();
+    // only try to decode the gzip stream once
+    if (!CheckedForGzip) {
+      zIn = new zlib_stream::zip_istream(*pInStream);
+      if (zIn->is_gzip()) {
+        pInStream = zIn;
+        CheckedForGzip = true;
+      }
+      else
+        delete zIn;
+    }
+#endif
+
+    InstallStreamFilter();
 
     // Set the locale for number parsing to avoid locale issues: PR#1785463
     obLocale.SetLocale();
 
     // Also set the C++ stream locale
-    locale originalLocale = pInput->getloc(); // save the original
+    locale originalLocale = pInStream->getloc(); // save the original
     locale cNumericLocale(originalLocale, "C", locale::numeric);
-    pInput->imbue(cNumericLocale);
+    pInStream->imbue(cNumericLocale);
 
-    // skip molecules if -f or -l option is set
-    if (!SkippedMolecules) {
-        Count = 0; // make sure it's 0
-        if(!SetStartAndEnd()) {
-           return false;
-        }
-        SkippedMolecules = true;
-    }
-
-    // catch last molecule acording to -l
-    Count++;
-    bool success = false;
-    if (EndNumber==0 || (unsigned)Count<=EndNumber) {
-        success = pInFormat->ReadMolecule(pOb, this);
-    }
-
+    bool success = pInFormat->ReadMolecule(pOb, this);
     // return the C locale to the original one
     obLocale.RestoreLocale();
     // Restore the original C++ locale as well
-    pInput->imbue(originalLocale);
+    pInStream->imbue(originalLocale);
 
     // If we failed to read, plus the stream is over, then check if this is a stream from ReadFile
-    if (!success && !pInput->good() && ownedInStreams.size() > 0) {
-      ifstream *inFstream = dynamic_cast<ifstream*>(ownedInStreams[0]);
+    if (!success && !pInStream->good() && NeedToFreeInStream) {
+      ifstream *inFstream = dynamic_cast<ifstream*>(pInStream);
       if (inFstream != 0)
         inFstream->close(); // We will free the stream later, but close the file now
     }
@@ -888,6 +838,21 @@ namespace OpenBabel {
     return success;
   }
 
+    void OBConversion::InstallStreamFilter()
+  {
+    //Do not install filtering input stream if a binary or XML format
+    //or if already installed in the current InStream (which may have changed).
+    //Deleting any old LErdbuf before contructing a new one ensures there is
+    //only one for each OBConversion object. It is deleted in the destructor.
+
+    if(pInFormat && !(pInFormat->Flags() & (READBINARY | READXML)) && pInStream->rdbuf()!=pLineEndBuf)
+    {
+      delete pLineEndBuf;
+      pLineEndBuf = NULL;
+      pLineEndBuf = new LErdbuf(pInStream->rdbuf());
+      pInStream->rdbuf(pLineEndBuf);
+    }
+  }
 
   //////////////////////////////////////////////////
   /// Writes the object pOb but does not delete it afterwards.
@@ -895,90 +860,41 @@ namespace OpenBabel {
   /// Returns true if successful.
   bool OBConversion::Write(OBBase* pOb, ostream* pos)
   {
-    if(pos) SetOutStream(pos, false);
+    if(pos) pOutStream=pos;
 
-    if(!pOutFormat || !pOutput) return false;
+    if(!pOutFormat || !pOutStream) return false;
 
+    ostream* pOrigOutStream = pOutStream;
+#ifdef HAVE_LIBZ
+#ifndef DISABLE_WRITE_COMPRESSION
+    zlib_stream::zip_ostream zOut(*pOutStream);
+    if(IsOption("z",GENOPTIONS))
+      {
+        // make sure to output the header
+        zOut.make_gzip();
+        pOutStream = &zOut;
+      }
+#endif
+#endif
     SetOneObjectOnly(); //So that IsLast() returns true, which is important for XML formats
 
     // Set the locale for number parsing to avoid locale issues: PR#1785463
     obLocale.SetLocale();
     // Also set the C++ stream locale
-    locale originalLocale = pOutput->getloc(); // save the original
+    locale originalLocale = pOutStream->getloc(); // save the original
     locale cNumericLocale(originalLocale, "C", locale::numeric);
-    pOutput->imbue(cNumericLocale);
+    pOutStream->imbue(cNumericLocale);
 
     // The actual work is done here
     bool success = pOutFormat->WriteMolecule(pOb,this);
 
+    pOutStream = pOrigOutStream;
     // return the C locale to the original one
     obLocale.RestoreLocale();
     // Restore the C++ stream locale too
-    pOutput->imbue(originalLocale);
+    pOutStream->imbue(originalLocale);
 
     return success;
-  }
-
-  //save the current input state to this streamstate and clear conv
-  void OBConversion::StreamState::pushInput(OBConversion& conv)
-  {
-    assert(ownedStreams.size() == 0); //should be empty
-
-    pStream = conv.pInput;
-    std::copy(conv.ownedInStreams.begin(), conv.ownedInStreams.end(), std::back_inserter(ownedStreams));
-
-    conv.pInput = NULL;
-    conv.ownedInStreams.clear();
-  }
-
-  //restore state, blowing away whatever is in conv
-  void OBConversion::StreamState::popInput(OBConversion& conv)
-  {
-    conv.SetInStream(NULL);
-    conv.pInput =  dynamic_cast<std::istream*>(pStream);
-
-    assert(conv.ownedInStreams.size() == 0); //should be empty
-
-    for(unsigned i = 0, n = conv.ownedInStreams.size(); i < n; i++)
-    {
-      std::istream *s = dynamic_cast<std::istream*>(conv.ownedInStreams[i]);
-      assert(s);
-      conv.ownedInStreams.push_back(s);
-    }
-
-    pStream = NULL;
-    ownedStreams.clear();
-  }
-
-  //save the current output state to this streamstate and clear conv
-  void OBConversion::StreamState::pushOutput(OBConversion& conv)
-  {
-    assert(ownedStreams.size() == 0); //should be empty
-
-    pStream = conv.pOutput;
-    std::copy(conv.ownedOutStreams.begin(), conv.ownedOutStreams.end(), std::back_inserter(ownedStreams));
-
-    conv.pOutput = NULL;
-    conv.ownedOutStreams.clear();
-  }
-
-  //restore state, blowing away whatever is in conv
-  void OBConversion::StreamState::popOutput(OBConversion& conv)
-  {
-    conv.SetOutStream(NULL);
-    conv.pOutput =  dynamic_cast<std::ostream*>(pStream);
-
-    assert(conv.ownedOutStreams.size() == 0); //should be empty
-
-    for(unsigned i = 0, n = conv.ownedOutStreams.size(); i < n; i++)
-    {
-      std::ostream *s = dynamic_cast<std::ostream*>(conv.ownedOutStreams[i]);
-      assert(s);
-      conv.ownedOutStreams.push_back(s);
-    }
-
-    pStream = NULL;
-    ownedStreams.clear();
   }
 
   //////////////////////////////////////////////////
@@ -987,19 +903,15 @@ namespace OpenBabel {
   /// Returns true if successful.
   std::string OBConversion::WriteString(OBBase* pOb, bool trimWhitespace)
   {
+    ostream *oldStream = pOutStream; // save old output
     stringstream newStream;
     string temp;
 
     if(pOutFormat)
-    {
-      StreamState savedOut;
-      savedOut.pushOutput(*this);
-
-      SetOutStream(&newStream, false);
-      Write(pOb);
-
-      savedOut.popOutput(*this);
-    }
+      {
+        Write(pOb, &newStream);
+      }
+    pOutStream = oldStream;
 
     temp = newStream.str();
     if (trimWhitespace) // trim the trailing whitespace
@@ -1016,109 +928,114 @@ namespace OpenBabel {
   /// Returns true if successful.
   bool OBConversion::WriteFile(OBBase* pOb, string filePath)
   {
-    if(!pOutFormat)
-    {
-      //attempt to autodetect format
-      pOutFormat = FormatFromExt(filePath.c_str(), outFormatGzip);
-      if(!pOutFormat)
-        return false;
+    if(!pOutFormat) return false;
+
+    // if we have an old stream, free this first before creating a new one
+    if (pOutStream && NeedToFreeOutStream) {
+      delete pOutStream;
     }
 
-    ios_base::openmode omode = ios_base::out|ios_base::binary;
-    ofstream *ofs = new ofstream(filePath.c_str(),omode);
+    ofstream *ofs = new ofstream;
+    NeedToFreeOutStream = true; // make sure we clean this up later
+    ios_base::openmode omode =
+      pOutFormat->Flags() & WRITEBINARY ? ios_base::out|ios_base::binary : ios_base::out;
+
+    ofs->open(filePath.c_str(),omode);
     if(!ofs || !ofs->good())
       {
-        if(ofs) delete ofs;
         obErrorLog.ThrowError(__FUNCTION__,"Cannot write to " + filePath, obError);
         return false;
       }
 
-    SetOutStream(ofs, true);
-    return Write(pOb);
+    return Write(pOb, ofs);
   }
 
   void OBConversion::CloseOutFile()
   {
-    SetOutStream(NULL);
+    if (pOutStream && NeedToFreeOutStream)
+    {
+      delete pOutStream;
+      NeedToFreeOutStream = false;
+      pOutStream = NULL;
+    }
   }
 
   ////////////////////////////////////////////
   bool	OBConversion::ReadString(OBBase* pOb, std::string input)
   {
-    SetInStream(new stringstream(input), true);
-    return Read(pOb);
+    // if we have an old stream, free this first before creating a new one
+    if (pInStream && NeedToFreeInStream) {
+      delete pInStream;
+    }
+
+    stringstream *pin = new stringstream(input);
+    NeedToFreeInStream = true; // make sure we clean this up later
+    return Read(pOb, pin);
   }
 
 
   ////////////////////////////////////////////
   bool	OBConversion::ReadFile(OBBase* pOb, std::string filePath)
   {
-    if(!pInFormat)
-    {
-      //attempt to auto-detect file format from extension
-      pInFormat = FormatFromExt(filePath.c_str(), inFormatGzip);
-      if(!pInFormat)
-        return false;
-    }
+    if(!pInFormat) return false;
 
     // save the filename
     InFilename = filePath;
+
+    // if we have an old stream, free this first before creating a new one
+    if (pInStream && NeedToFreeInStream) {
+      delete pInStream;
+    }
+
+    ifstream *ifs = new ifstream;
+    NeedToFreeInStream = true; // make sure we free this
+
     ios_base::openmode imode = ios_base::in|ios_base::binary; //now always binary because may be gzipped
-    ifstream *ifs = new ifstream(filePath.c_str(),imode);
+//      pInFormat->Flags() & READBINARY ? ios_base::in|ios_base::binary : ios_base::in;
+      
+    ifs->open(filePath.c_str(),imode);
     if(!ifs || !ifs->good())
-    {
-        if(ifs) delete ifs;
+      {
         obErrorLog.ThrowError(__FUNCTION__,"Cannot read from " + filePath, obError);
         return false;
-    }
-#ifdef HAVE_LIBZ
-    if(!inFormatGzip && pInFormat && zlib_stream::isGZip(*ifs))
-    {
-      //for backwards compat, attempt to autodetect gzip
-      inFormatGzip = true;
-    }
-#endif
+      }
 
-    SetInStream(ifs, true);
-    return Read(pOb);
+    return Read(pOb,ifs);
   }
 
   ////////////////////////////////////////////
   bool OBConversion::OpenInAndOutFiles(std::string infilepath, std::string outfilepath)
   {
+    // if we have an old input stream, free this first before creating a new one
+    if (pInStream && NeedToFreeInStream)
+      delete pInStream;
 
-    if(!pInFormat)
-    {
-      //attempt to auto-detect file format from extension
-      pInFormat = FormatFromExt(infilepath.c_str(), inFormatGzip);
-    }
-    ifstream *ifs = new ifstream(infilepath.c_str(),ios_base::in|ios_base::binary);  //always open in binary mode
+    // if we have an old output stream, free this first before creating a new one
+    if (pOutStream && NeedToFreeOutStream)
+      delete pOutStream;
+
+    ifstream *ifs = new ifstream;
+    NeedToFreeInStream = true; // make sure we free this
+    ifs->open(infilepath.c_str(),ios_base::in|ios_base::binary); //always open in binary mode
     if(!ifs || !ifs->good())
     {
-      if(ifs) delete ifs;
       obErrorLog.ThrowError(__FUNCTION__,"Cannot read from " + infilepath, obError);
       return false;
     }
-    SetInStream(ifs, true);
+    pInStream = ifs;
     InFilename = infilepath;
 
     if(outfilepath.empty())//Don't open an outfile with an empty name.
       return true;
-
-    if(!pOutFormat)
-    {
-      //attempt to autodetect format
-      pOutFormat = FormatFromExt(outfilepath.c_str(), outFormatGzip);
-    }
-    ofstream *ofs = new ofstream(outfilepath.c_str(),ios_base::out|ios_base::binary);//always open in binary mode
+    ofstream *ofs = new ofstream;
+    NeedToFreeOutStream = true; // make sure we clean this up later
+    ofs->open(outfilepath.c_str(),ios_base::out|ios_base::binary);//always open in binary mode
     if(!ofs || !ofs->good())
     {
-      if(ofs) delete ofs;
       obErrorLog.ThrowError(__FUNCTION__,"Cannot write to " + outfilepath, obError);
       return false;
     }
-    SetOutStream(ofs, true);
-    OutFilename = outfilepath;
+    pOutStream = ofs;
 
     return true;
   }
@@ -1132,8 +1049,9 @@ namespace OpenBabel {
       "-l <#> End import at molecule # specified\n"
       "-e Continue with next object after error, if possible\n"
       #ifdef HAVE_LIBZ
+      #ifndef DISABLE_WRITE_COMPRESSION //Unsolved problem with compression under Windows
       "-z Compress the output with gzip\n"
-      "-zin Decompress the input with gzip\n"
+      #endif
       #endif
       "-k Attempt to translate keywords\n";
       // -t All input files describe a single molecule
@@ -1268,7 +1186,7 @@ namespace OpenBabel {
   int OBConversion::FullConvert(std::vector<std::string>& FileList, std::string& OutputFileName,
                                 std::vector<std::string>& OutputFileList)
   {
-    OBConversion::OutFilename = OutputFileName; //ready for 2.4.0
+    //OBConversion::OutFilename = OutputFileName; ready for 2.4.0
 
     istream* pIs=NULL;
     ostream* pOs=NULL;
@@ -1279,7 +1197,8 @@ namespace OpenBabel {
     int Count=0;
     SetFirstInput();
     bool CommonInFormat = pInFormat ? true:false; //whether set in calling routine
-    ios_base::openmode omode = ios_base::out|ios_base::binary;
+    ios_base::openmode omode =
+      pOutFormat->Flags() & WRITEBINARY ? ios_base::out|ios_base::binary : ios_base::out;
     obErrorLog.ClearLog();
 #ifndef DONT_CATCH_EXCEPTIONS
     try
@@ -1365,7 +1284,7 @@ namespace OpenBabel {
                 //multiple input files
                 vector<string>::iterator itr, tempitr;
                 tempitr = FileList.end();
-                --tempitr;
+                tempitr--;
                 for(itr=FileList.begin();itr!=FileList.end();++itr)
                   {
                     InFilename = *itr;
@@ -1440,22 +1359,23 @@ namespace OpenBabel {
                     //Output is put in a temporary stream and written to a file
                     //with an augmenting name only when it contains a valid object.
                     int Indx=1;
+                    SetInStream(&is);
 #ifdef HAVE_LIBZ
-                    if(pInFormat && zlib_stream::isGZip(*pIs))
-                    {
-                      //for backwards compat, attempt to autodetect gzip
-                      inFormatGzip = true;
-                    }
+                    zlib_stream::zip_istream zIn(is);
 #endif
-                    SetInStream(pIs, false);
-
-
                     for(;;)
                       {
                         stringstream ss;
                         SetOutStream(&ss);
                         SetOutputIndex(0); //reset for new file
                         SetOneObjectOnly();
+
+#ifdef HAVE_LIBZ
+                        if(Indx==1 && zIn.is_gzip()) {
+                          SetInStream(&zIn);
+                          CheckedForGzip = true; // we know this one is gzip'ed
+                        }
+#endif
 
                         int ThisFileCount = Convert();
                         if(ThisFileCount==0) break;
@@ -1471,9 +1391,20 @@ namespace OpenBabel {
                           }
 
                         OutputFileList.push_back(incrfile);
-                        SetOutStream(&ofs, false); //pickup possible gzip
-                        *pOutput << ss.rdbuf();
-                        SetOutStream(NULL);
+#ifdef HAVE_LIBZ
+#ifndef DISABLE_WRITE_COMPRESSION
+                        if(IsOption("z",GENOPTIONS))
+                          {
+                            zlib_stream::zip_ostream zOut(ofs);
+                            // make sure to output the header
+                            zOut.make_gzip();
+                            zOut << ss.rdbuf();
+                          }
+                        else
+#endif
+#endif
+                          ofs << ss.rdbuf();
+
                         ofs.close();
                         ss.clear();
                       }
@@ -1485,7 +1416,7 @@ namespace OpenBabel {
         //Single input and output files
         Count = Convert(pIs,pOs);
 
-        if(os && !os.is_open() && !OutputFileName.empty())
+        if(!os.is_open() && !OutputFileName.empty())
           {
             //Output was written to temporary string stream. Output it to the file
             os.open(OutputFileName.c_str(),omode);
@@ -1494,9 +1425,7 @@ namespace OpenBabel {
                 obErrorLog.ThrowError(__FUNCTION__,"Cannot write to " + OutputFileName, obError);
                 return Count;
               }
-            SetOutStream(&os, false);
-            *pOutput << ssOut.rdbuf();
-            SetOutStream(NULL);
+            os << ssOut.rdbuf();
           }
         return Count;
       }
@@ -1521,13 +1450,13 @@ namespace OpenBabel {
         if(SetFormat || SetInFormat("smi"))
           {
             ss->clear();
-            ss->str(InFilename);
+            ss->str(InFilename); //...use the stringstream instead
             return true;
           }
       }
-    else if(!SetFormat)
+      else if(!SetFormat)
       {
-        pInFormat = FormatFromExt(InFilename.c_str(), inFormatGzip);
+        pInFormat = FormatFromExt(InFilename.c_str());
         if(pInFormat==NULL)
           {
             string::size_type pos = InFilename.rfind('.');
@@ -1540,7 +1469,16 @@ namespace OpenBabel {
           }
       }
 
-    ios_base::openmode imode = ios_base::in|ios_base::binary;
+#ifndef ALL_READS_BINARY
+  #define ALL_READS_BINARY //now the default
+#endif
+    ios_base::openmode imode;
+#ifdef ALL_READS_BINARY //Makes unix files compatible with VC++6
+    imode = ios_base::in|ios_base::binary;
+#else
+    imode = pInFormat->Flags() & READBINARY ? ios_base::in|ios_base::binary : ios_base::in;
+#endif
+
     is->open(InFilename.c_str(), imode);
     if(!is->good())
       {
@@ -1562,7 +1500,7 @@ Additional options :
 -b Convert dative bonds e.g.[N+]([O-])=O to N(=O)=O
 -r Remove all but the largest contiguous fragment
 -c Center Coordinates
--C Combine mols in first file with others by name
+-C Combine mols in first file with others having same name
 --filter <filterstring> Filter: convert only when tests are true:\n
 --add <list> Add properties from descriptors\n
 --delete <list> Delete properties in list\n
@@ -1806,7 +1744,6 @@ Additional options :
    * @example obconversion_readstring.py
    * Reading a smiles string in python.
    */
-
 
 
 }//namespace OpenBabel

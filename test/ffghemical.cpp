@@ -34,28 +34,20 @@ using namespace std;
 using namespace OpenBabel;
 
 #ifdef TESTDATADIR
-  string etestdatadir = TESTDATADIR;
-  string eresults_file = etestdatadir + "ghemicalresults.txt";
-  string emolecules_file = etestdatadir + "forcefield.sdf";
+  string testdatadir = TESTDATADIR;
+  string results_file = testdatadir + "ghemicalresults.txt";
+  string molecules_file = testdatadir + "forcefield.sdf";
 #else
-  string eresults_file = "files/ghemicalresults.txt";
-  string emolecules_file = "files/forcefield.sdf";
+  string results_file = "files/ghemicalresults.txt";
+  string molecules_file = "files/forcefield.sdf";
 #endif
 
-void PGenerateEnergies();
+void GenerateEnergies();
 
-int ffghemical(int argc, char* argv[])
+int main(int argc,char *argv[])
 {
-  int defaultchoice = 1;
-  
-  int choice = defaultchoice;
-
-  if (argc > 1) {
-    if(sscanf(argv[1], "%d", &choice) != 1) {
-      printf("Couldn't parse that input as a number\n");
-      return -1;
-    }
-  }
+  // turn off slow sync with C-style output (we don't use it anyway).
+  std::ios::sync_with_stdio(false);
 
   // Define location of file formats for testing
   #ifdef FORMATDIR
@@ -64,25 +56,34 @@ int ffghemical(int argc, char* argv[])
     putenv(env);
   #endif
 
-  if (choice == 99)
+  if (argc != 1)
     {
-      PGenerateEnergies();
-      return 0;
+      if (strncmp(argv[1], "-g", 2))
+        {
+          cout << "Usage: ffghemical" << endl;
+          cout << "   Tests Open Babel Ghemical force field implementation." << endl;
+          return 0;
+        }
+      else
+        {
+          GenerateEnergies();
+          return 0;
+        }
     }
 
   cout << "# Testing Ghemical Force Field..." << endl;
 
   std::ifstream mifs;
-  if (!SafeOpen(mifs, emolecules_file.c_str()))
+  if (!SafeOpen(mifs, molecules_file.c_str()))
     {
-      cout << "Bail out! Cannot read file " << emolecules_file << endl;
+      cout << "Bail out! Cannot read file " << molecules_file << endl;
       return -1; // test failed
     }
 
   std::ifstream rifs;
-  if (!SafeOpen(rifs, eresults_file.c_str()))
+  if (!SafeOpen(rifs, results_file.c_str()))
     {
-      cout << "Bail out! Cannot read file " << eresults_file << endl;
+      cout << "Bail out! Cannot read file " << results_file << endl;
       return -1; // test failed
     }
 
@@ -155,14 +156,14 @@ int ffghemical(int argc, char* argv[])
   return 0;
 }
 
-void PGenerateEnergies()
+void GenerateEnergies()
 {
   std::ifstream ifs;
-  if (!SafeOpen(ifs, emolecules_file.c_str()))
+  if (!SafeOpen(ifs, molecules_file.c_str()))
     return;
 
   std::ofstream ofs;
-  if (!SafeOpen(ofs, eresults_file.c_str()))
+  if (!SafeOpen(ofs, results_file.c_str()))
     return;
 
   OBMol mol;

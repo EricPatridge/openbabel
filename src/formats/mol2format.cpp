@@ -33,8 +33,6 @@ namespace OpenBabel
       OBConversion::RegisterFormat("mol2",this, "chemical/x-mol2");
       OBConversion::RegisterFormat("ml2",this);
       OBConversion::RegisterFormat("sy2",this);
-      OBConversion::RegisterOptionParam("c", NULL, 0, OBConversion::INOPTIONS);
-      OBConversion::RegisterOptionParam("c", NULL, 0, OBConversion::OUTOPTIONS);
       OBConversion::RegisterOptionParam("l", NULL, 0, OBConversion::OUTOPTIONS);
     }
 
@@ -42,11 +40,8 @@ namespace OpenBabel
     {
       return
         "Sybyl Mol2 format\n"
-        "Read Options e.g. -ac\n"
-        "  c               Read UCSF Dock scores saved in comments preceeding molecules\n\n"
         "Write Options e.g. -xl\n"
-        "  l               Output ignores residue information (only ligands)\n\n"
-        "  c               Write UCSF Dock scores saved in comments preceeding molecules\n\n";
+        "  l               Output ignores residue information (only ligands)\n\n";
     };
 
     virtual const char* SpecificationURL()
@@ -69,37 +64,6 @@ namespace OpenBabel
 
   //Make an instance of the format class
   MOL2Format theMOL2Format;
-  
-  // Helper function for ReadMolecule
-  // \return Is this atom a sulfur in a (di)thiocarboxyl (-CS2, -COS, CS2H or COSH) group?
-  static bool IsThiocarboxylSulfur(OBAtom* queryatom)
-  {
-    if (!queryatom->IsSulfur())
-      return(false);
-    if (queryatom->GetHvyValence() != 1)
-      return(false);
-
-    OBAtom *atom = NULL;
-    OBBond *bond;
-    OBBondIterator i;
-
-    for (bond = queryatom->BeginBond(i); bond; bond = queryatom->NextBond(i))
-      if ((bond->GetNbrAtom(queryatom))->IsCarbon())
-      {
-        atom = bond->GetNbrAtom(queryatom);
-        break;
-      }
-    if (!atom)
-      return(false);
-    if (!(atom->CountFreeSulfurs() == 2)
-      && !(atom->CountFreeOxygens() == 1 && atom->CountFreeSulfurs() == 1))
-      return(false);
-
-    //atom is connected to a carbon that has a total
-    //of 2 attached free sulfurs or 1 free oxygen and 1 free sulfur
-    return(true);
-  }
-
 
   /////////////////////////////////////////////////////////////////
   bool MOL2Format::ReadMolecule(OBBase* pOb, OBConversion* pConv)
@@ -121,23 +85,12 @@ namespace OpenBabel
     vector<string> vstr;
     int len;
 
-
     mol.BeginModify();
 
     for (;;)
       {
         if (!ifs.getline(buffer,BUFF_SIZE))
           return(false);
-        if (pConv->IsOption("c", OBConversion::INOPTIONS)!=NULL && EQn(buffer,"###########",10))
-          {
-            char attr[32], val[32];
-            sscanf(buffer, "########## %[^:]:%s", attr, val);
-            OBPairData *dd = new OBPairData;
-            dd->SetAttribute(attr);
-            dd->SetValue(val);
-            dd->SetOrigin(fileformatInput);
-            mol.SetData(dd);
-          }
         if (EQn(buffer,"@<TRIPOS>MOLECULE",17))
           break;
       }
@@ -215,7 +168,6 @@ namespace OpenBabel
     double x,y,z,pcharge;
     char temp_type[BUFF_SIZE], resname[BUFF_SIZE], atmid[BUFF_SIZE];
     int elemno, resnum = -1;
-    int isotope = 0;
 
     ttab.SetFromType("SYB");
     for (i = 0;i < natoms;i++)
@@ -234,7 +186,7 @@ namespace OpenBabel
           str = "Cl";
         } else  if (strncmp(temp_type,"BR",2) == 0) {
           str = "Br";
-        } else if (strncmp(temp_type,"S.o2", 4) == 0) {
+        } else if (strncmp(temp_type,"S.o2", 4) == 02) {
           str = "S.O2";
         } else if (strncmp(temp_type,"S.o", 3) == 0) {
           str = "S.O";
@@ -275,17 +227,6 @@ namespace OpenBabel
         // it's a malformed atom type, but it may be the element symbol
         // GaussView does this (PR#1739905)
         if ( !elemno ) {
-          // check if it's "Du" or "Xx" and the element is in the atom name
-          if (str == "Du" || str == "Xx") {
-            str = atmid;
-            for (unsigned int i = 0; i < str.length(); ++i)
-              if (!isalpha(str[i])) {
-                str.erase(i);
-                break; // we've erased the end of the string
-              }
-          }
-
-
           std::stringstream errorMsg;
           errorMsg << "This Mol2 file is non-standard. Problem with molecule: "
                    << mol.GetTitle()
@@ -295,13 +236,11 @@ namespace OpenBabel
 
           string::size_type dotPos = str.find('.');
           if (dotPos == string::npos) {
-            elemno = etab.GetAtomicNum(str.c_str(), isotope);
+            elemno = etab.GetAtomicNum(str.c_str());
           }
         }
 
         atom.SetAtomicNum(elemno);
-        if (isotope)
-          atom.SetIsotope(isotope);
         ttab.SetToType("INT");
         ttab.Translate(str1,str);
         atom.SetType(str1);
@@ -372,51 +311,20 @@ namespace OpenBabel
         mol.AddBond(start,end,order);
       }
 
-    // Make a pass to ensure that there are no double bonds
-    // between atoms which are also involved in aromatic bonds
-    // as that may ill-condition kekulization (fixes potential
-    // issues with molecules like CEWYIM30 (MMFF94 validation suite)
-    // Patch by Paolo Tosco 2012-06-07
-    int idx1, idx2;
-    bool idx1arom, idx2arom;
-    FOR_BONDS_OF_MOL(bond, mol) {
-      if (bond->GetBO() != 2)
-          continue;
-      idx1 = bond->GetBeginAtom()->GetIdx();
-      idx2 = bond->GetEndAtom()->GetIdx();
-      idx1arom = idx2arom = false;
-      FOR_BONDS_OF_MOL(bond2, mol) {
-        if (&*bond == &*bond2)
-          continue;
-        if ((bond2->GetBeginAtom()->GetIdx() == idx1 || bond2->GetEndAtom()->GetIdx() == idx1)
-          && bond2->GetBO() == 5)
-          idx1arom = true;
-        else if ((bond2->GetBeginAtom()->GetIdx() == idx2 || bond2->GetEndAtom()->GetIdx() == idx2)
-          && bond2->GetBO() == 5)
-          idx2arom = true;
-        if (idx1arom && idx2arom) {
-          bond->SetBO(1);
-          break;
-        }
-      }
-    }
-
     // Now that bonds are added, make a pass to "de-aromatize" carboxylates
-    // and (di)thiocarboxylates
     // Fixes PR#3092368
-    OBAtom *carboxylCarbon, *oxysulf;
+    OBAtom *carboxylCarbon, *oxygen;
     FOR_BONDS_OF_MOL(bond, mol)
       {
         if (bond->GetBO() != 5)
           continue;
 
-        if (bond->GetBeginAtom()->IsCarboxylOxygen() || IsThiocarboxylSulfur(bond->GetBeginAtom())) {
+        if (bond->GetBeginAtom()->IsCarboxylOxygen()) {
           carboxylCarbon = bond->GetEndAtom();
-          oxysulf = bond->GetBeginAtom();
-        }
-        else if (bond->GetEndAtom()->IsCarboxylOxygen() || IsThiocarboxylSulfur(bond->GetEndAtom())) {
+          oxygen = bond->GetBeginAtom();
+        } else if (bond->GetEndAtom()->IsCarboxylOxygen()) {
           carboxylCarbon = bond->GetBeginAtom();
-          oxysulf = bond->GetEndAtom();
+          oxygen = bond->GetEndAtom();
         } else // not a carboxylate
           continue;
 
@@ -426,7 +334,7 @@ namespace OpenBabel
         }
 
         // We need to choose a double bond
-        if (oxysulf->ExplicitHydrogenCount() == 1 || oxysulf->GetFormalCharge() == -1) { // single only
+        if (oxygen->ExplicitHydrogenCount() == 1 || oxygen->GetFormalCharge() == -1) { // single only
           bond->SetBO(1);
           continue;
         } else
@@ -448,12 +356,6 @@ namespace OpenBabel
       if (bv[bond->GetIdx()] || (bond->GetBO() != 5))
         continue;
 
-      // only bother for 6 membered rings (e.g., pyridinium)
-      // 5-membered rings like pyrrole, imidazole, or triazole are OK with nH
-      OBRing *ring = bond->FindSmallestRing();
-      if ( !ring || ring->Size() != 6 )
-        continue;
-
       if ((bond->GetBeginAtom()->IsCarbon() && bond->GetEndAtom()->IsNitrogen())
         || (bond->GetBeginAtom()->IsNitrogen() && bond->GetEndAtom()->IsCarbon())) {
         carbon = (bond->GetBeginAtom()->IsCarbon() ? bond->GetBeginAtom() : bond->GetEndAtom());
@@ -463,13 +365,9 @@ namespace OpenBabel
           if (bond2->GetBO() != 5)
             continue;
           partner = (bond2->GetBeginAtom() == carbon ? bond2->GetEndAtom() : bond2->GetBeginAtom());
-          if (!ring->IsMember(partner))
-            continue; // not in the same 6-membered ring
-
           if (partner->IsNitrogen() && partner->GetValence() == 3 && partner->GetFormalCharge() == 0) {
             int n_h_bonded = 0;
             FOR_BONDS_OF_ATOM(bond3, partner) {
-              boundToNitrogen = (bond3->GetBeginAtom() == partner ? bond3->GetEndAtom() : bond3->GetBeginAtom());
               if (boundToNitrogen->IsHydrogen())
                 n_h_bonded++;
             }
@@ -513,14 +411,13 @@ namespace OpenBabel
         OBAtom *atom1, *atom2;
         atom1 = bond->GetBeginAtom();
         atom2 = bond->GetEndAtom();
-        // set formal charges for pyrilium
-        // (i.e., this bond is a 6-membered ring, aromatic, and C-O)
         if (atom1->IsOxygen() && atom1->IsInRingSize(6))
           atom1->SetFormalCharge(1);
         else if (atom2->IsOxygen() && atom2->IsInRingSize(6))
           atom2->SetFormalCharge(1);
       }
     }
+
     // Suggestion by Liu Zhiguo 2008-01-26
     // Mol2 files define atom types -- there is no need to re-perceive
     mol.SetAtomTypesPerceived();
@@ -553,7 +450,6 @@ namespace OpenBabel
 
     ifs.seekg(pos); // go back to the end of the molecule
     */
-
     return(true);
   }
 
@@ -574,22 +470,6 @@ namespace OpenBabel
     string str,str1;
     char buffer[BUFF_SIZE],label[BUFF_SIZE];
     char rnum[BUFF_SIZE],rlabel[BUFF_SIZE];
-
-    //Check if UCSF Dock style coments are on
-    if(pConv->IsOption("c", OBConversion::OUTOPTIONS)!=NULL) {
-        vector<OBGenericData*>::iterator k;
-        vector<OBGenericData*> vdata = mol.GetData();
-        ofs << endl;
-        for (k = vdata.begin();k != vdata.end();++k) {
-            if ((*k)->GetDataType() == OBGenericDataType::PairData
-            && (*k)->GetOrigin()!=local //internal OBPairData is not written
-            && (*k)->GetAttribute()!="PartialCharges")
-            {
-                ofs << "##########\t" << (*k)->GetAttribute() << ":\t" << ((OBPairData*)(*k))->GetValue() << endl;
-            }
-        }
-        ofs << endl;
-    }
 
     ofs << "@<TRIPOS>MOLECULE" << endl;
     str = mol.GetTitle();
@@ -674,11 +554,11 @@ namespace OpenBabel
             snprintf(rnum,BUFF_SIZE,"%d",res->GetNum());
           }
 
-        snprintf(buffer,BUFF_SIZE,"%7d %-6s   %9.4f %9.4f %9.4f %-5s %3s  %-8s %9.4f",
-                 atom->GetIdx(),label,
+        snprintf(buffer,BUFF_SIZE,"%7d%1s%-6s%12.4f%10.4f%10.4f%1s%-5s%4s%1s %-8s%10.4f",
+                 atom->GetIdx(),"",label,
                  atom->GetX(),atom->GetY(),atom->GetZ(),
-                 str1.c_str(),
-                 rnum,rlabel,
+                 "",str1.c_str(),
+                 rnum,"",rlabel,
                  atom->GetPartialCharge());
         ofs << buffer << endl;
       }
@@ -699,9 +579,9 @@ namespace OpenBabel
         else
           snprintf(label,BUFF_SIZE,"%d",bond->GetBO());
 
-        snprintf(buffer, BUFF_SIZE,"%6d %5d %5d   %2s",
+        snprintf(buffer, BUFF_SIZE,"%6d%6d%6d%3s%2s",
                  bond->GetIdx()+1,bond->GetBeginAtomIdx(),bond->GetEndAtomIdx(),
-                 label);
+                 "",label);
         ofs << buffer << endl;
       }
     // NO trailing blank line (PR#1868929).

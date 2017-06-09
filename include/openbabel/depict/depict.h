@@ -56,15 +56,13 @@ namespace OpenBabel
         drawTermC            = 0x0010,
         drawAllC             = 0x0020,
         noWedgeHashGen       = 0x0100,
-        asymmetricDoubleBond = 0x0200,
-        allExplicit          = 0x0400
+        asymmetricDoubleBond = 0x0200
       };
 
       /**
-       * Constructors.
+       * Constructor.
        */
       OBDepict(OBPainter *painter);
-      OBDepict(OBPainter *painter, bool withBall, bool symbolOnBall=false);
       /**
        * Destructor.
        */
@@ -112,7 +110,7 @@ namespace OpenBabel
       void SetBondColor(const std::string& scolor);
 
     private:
-      OBDepictPrivate * d;
+      OBDepictPrivate * const d;
   };
 
 }

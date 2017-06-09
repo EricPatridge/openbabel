@@ -36,28 +36,20 @@ using namespace OpenBabel;
 void GenerateSmartsReference();
 
 #ifdef TESTDATADIR
-  string mtestdatadir = TESTDATADIR;
-  string msmarts_file = mtestdatadir + "smartstest.txt";
-  string mresults_file = mtestdatadir + "smartsresults.txt";
-  string msmilestypes_file = mtestdatadir + "attype.00.smi";
+  string testdatadir = TESTDATADIR;
+  string smarts_file = testdatadir + "smartstest.txt";
+  string results_file = testdatadir + "smartsresults.txt";
+  string smilestypes_file = testdatadir + "attype.00.smi";
 #else
-   string msmarts_file = "files/smartstest.txt";
-   string mresults_file = "files/smartsresults.txt";
-   string msmilestypes_file = "files/attype.00.smi";
+   string smarts_file = "files/smartstest.txt";
+   string results_file = "files/smartsresults.txt";
+   string smilestypes_file = "files/attype.00.smi";
 #endif
 
-int smartstest(int argc, char* argv[])
+int main(int argc,char *argv[])
 {
-  int defaultchoice = 1;
-  
-  int choice = defaultchoice;
-
-  if (argc > 1) {
-    if(sscanf(argv[1], "%d", &choice) != 1) {
-      printf("Couldn't parse that input as a number\n");
-      return -1;
-    }
-  }
+  // turn off slow sync with C-style output (we don't use it anyway).
+  std::ios::sync_with_stdio(false);
 
   // Define location of file formats for testing
   #ifdef FORMATDIR
@@ -66,18 +58,27 @@ int smartstest(int argc, char* argv[])
     putenv(env);
   #endif
 
-    if (choice==99)
+  if (argc != 1)
     {
+      if (strncmp(argv[1], "-g", 2))
+        {
+          cout << "Usage: smartstest\n";
+          cout << "   Tests Open Babel SMILES/SMARTS pattern matching." << endl;
+          return 0;
+        }
+      else
+        {
           GenerateSmartsReference();
           return 0;
+        }
     }
   
   cout << endl << "# Testing SMARTS...  \n";
 
   std::ifstream ifs;
-  if (!SafeOpen(ifs, msmarts_file.c_str()))
+  if (!SafeOpen(ifs, smarts_file.c_str()))
     {
-      cout << "Bail out! Cannot read " << msmarts_file << endl;
+      cout << "Bail out! Cannot read " << smarts_file << endl;
       return -1; // test failed
     }
 
@@ -99,9 +100,9 @@ int smartstest(int argc, char* argv[])
   ifs.close();
 
   std::ifstream rifs;
-  if (!SafeOpen(rifs, mresults_file.c_str()))
+  if (!SafeOpen(rifs, results_file.c_str()))
     {
-      cout << "Bail out! Cannot read in results file " << mresults_file << endl;
+      cout << "Bail out! Cannot read in results file " << results_file << endl;
       return -1; // test failed
     }
   unsigned int npats;
@@ -118,9 +119,9 @@ int smartstest(int argc, char* argv[])
     }
 
   std::ifstream mifs;
-  if (!SafeOpen(mifs, msmilestypes_file.c_str()))
+  if (!SafeOpen(mifs, smilestypes_file.c_str()))
     {
-      cout << "Bail out! Cannot read atom types " << msmilestypes_file << endl;
+      cout << "Bail out! Cannot read atom types " << smilestypes_file << endl;
       return -1; // test failed
     }
 
@@ -151,7 +152,7 @@ int smartstest(int argc, char* argv[])
       currentMol++;
       molPassed = true;
 
-      for (i = vsp.begin();i != vsp.end();++i)
+      for (i = vsp.begin();i != vsp.end();i++)
         {
           if (!rifs.getline(buffer,BUFF_SIZE))
             {
@@ -174,7 +175,7 @@ int smartstest(int argc, char* argv[])
               if (mlist.size())
                 cout << "# First match: atom #" << mlist[0][0] << "\n";
               molPassed = false;
-              continue;
+              break;
             }
 
           if (mlist.size())
@@ -196,7 +197,7 @@ int smartstest(int argc, char* argv[])
               if (k != vs.size())
                 {
                   molPassed = false;
-                  continue;
+                  break;
                 }
             }
         }
@@ -214,7 +215,7 @@ int smartstest(int argc, char* argv[])
 void GenerateSmartsReference()
 {
   std::ifstream ifs;
-  if (!SafeOpen(ifs,msmarts_file.c_str()))
+  if (!SafeOpen(ifs,smarts_file.c_str()))
     return;
 
   char buffer[BUFF_SIZE];
@@ -233,12 +234,12 @@ void GenerateSmartsReference()
     }
 
   std::ofstream ofs;
-  if (!SafeOpen(ofs, mresults_file.c_str()))
+  if (!SafeOpen(ofs, results_file.c_str()))
     return;
 
   ofs << vsp.size() << " patterns" << endl;
   std::ifstream mifs;
-  if (!SafeOpen(mifs, msmilestypes_file.c_str()))
+  if (!SafeOpen(mifs, smilestypes_file.c_str()))
     return;
 
   vector<int> vm;
@@ -261,11 +262,11 @@ void GenerateSmartsReference()
 
       if (mol.Empty())
         continue;
-      for (i = vsp.begin();i != vsp.end();++i)
+      for (i = vsp.begin();i != vsp.end();i++)
         {
           (*i)->Match(mol);
           mlist = (*i)->GetMapList();
-          for (j = mlist.begin();j != mlist.end();++j)
+          for (j = mlist.begin();j != mlist.end();j++)
             {
               sprintf(buffer,"%3d",*(j->begin()));
               ofs << buffer;

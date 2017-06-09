@@ -33,8 +33,6 @@ namespace OpenBabel
     {
       OBConversion::RegisterFormat("pdb",this, "chemical/x-pdb");
       OBConversion::RegisterFormat("ent",this, "chemical/x-pdb");
-
-      OBConversion::RegisterOptionParam("o", this);
     }
 
     virtual const char* Description() //required
@@ -44,10 +42,7 @@ namespace OpenBabel
         "Read Options e.g. -as\n"
         "  s  Output single bonds only\n"
         "  b  Disable bonding entirely\n"
-        "  c  Ignore CONECT records\n\n"
-
-        "Write Options, e.g. -xo\n"
-        "  o  Write origin in space group label (CRYST1 section)\n\n";
+        "  c  Ignore CONECT records\n\n";
     };
 
     virtual const char* SpecificationURL()
@@ -71,8 +66,6 @@ namespace OpenBabel
 
   ////////////////////////////////////////////////////
   /// Utility functions
-  static void fixRhombohedralSpaceGroupWriter(string &strHM);
-  static void fixRhombohedralSpaceGroupReader(string &strHM);
   static bool parseAtomRecord(char *buffer, OBMol & mol, int chainNum);
   static bool parseConectRecord(char *buffer, OBMol & mol);
   static bool readIntegerFromRecord(char *buffer, unsigned int columnAsSpecifiedInPDB, long int *target);
@@ -94,14 +87,6 @@ namespace OpenBabel
 
     return ifs.good() ? 1 : -1;
   }
-  /////////////////////////////////////////////////////////////////
-   template <typename T> string to_string(T pNumber)
-  {
-    ostringstream oOStrStream;
-    oOStrStream << pNumber;
-    return oOStrStream.str();
-  }
-
   /////////////////////////////////////////////////////////////////
   bool PDBFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)
   {
@@ -170,7 +155,6 @@ namespace OpenBabel
           buffer[66] = '\0';
           group += &(buffer[55]);
           Trim (group);
-          fixRhombohedralSpaceGroupReader(group);
 
           OBUnitCell *pCell=new OBUnitCell;
           pCell->SetOrigin(fileformatInput);
@@ -494,11 +478,8 @@ namespace OpenBabel
     char the_chain = ' ';
     const char *element_name;
     int res_num;
-    char the_insertioncode = ' ';
     bool het=true;
     int model_num = 0;
-    const int MAX_HM_NAME_LEN = 11;
-
     if (!pConv->IsLast() || pConv->GetOutputIndex() > 1)
       { // More than one molecule record
         model_num = pConv->GetOutputIndex(); // MODEL 1-based index
@@ -574,27 +555,9 @@ namespace OpenBabel
         OBUnitCell *pUC = (OBUnitCell*)pmol->GetData(OBGenericDataType::UnitCell);
         if(pUC->GetSpaceGroup()){
           string tmpHM=pUC->GetSpaceGroup()->GetHMName();
-          fixRhombohedralSpaceGroupWriter(tmpHM);
-
           // Do we have an extended HM symbol, with origin choice as ":1" or ":2" ? If so, remove it.
           size_t n=tmpHM.find(":");
-          if(n!=string::npos) tmpHM=tmpHM.substr(0, n);
-
-          if (pConv->IsOption("o", OBConversion::OUTOPTIONS))
-            {
-              unsigned int origin = pUC->GetSpaceGroup()->GetOriginAlternative();
-              if (origin == pUC->GetSpaceGroup()->HEXAGONAL_ORIGIN)
-                tmpHM[0] = 'H';
-              else if (origin > 0)
-                tmpHM += ":" + to_string(origin);
-
-              if (tmpHM.length() > MAX_HM_NAME_LEN)
-              {
-                tmpHM.erase(std::remove(tmpHM.begin(), tmpHM.end(), ' '),
-                            tmpHM.end());
-              }
-            }
-
+          if(n!=string::npos) tmpHM=tmpHM.substr(0,n);
           snprintf(buffer, BUFF_SIZE,
                    "CRYST1%9.3f%9.3f%9.3f%7.2f%7.2f%7.2f %-11s 1",
                    pUC->GetA(), pUC->GetB(), pUC->GetC(),
@@ -607,7 +570,7 @@ namespace OpenBabel
                    pUC->GetA(), pUC->GetB(), pUC->GetC(),
                    pUC->GetAlpha(), pUC->GetBeta(), pUC->GetGamma(),
                    "P1");
-
+           
         ofs << buffer << endl;
       }
 
@@ -651,7 +614,7 @@ namespace OpenBabel
         else
           {
             char tmp[10];
-            strncpy(tmp, type_name, 9); // make sure to null-terminate tmp
+            strncpy(tmp, type_name, 10);
             snprintf(type_name, sizeof(type_name), " %-3s", tmp);
           }
 
@@ -669,7 +632,7 @@ namespace OpenBabel
                 if (strlen(type_name) < 4)
                   {
                     char tmp[10];
-                    strncpy(tmp, type_name, 9); // make sure to null-terminate tmp
+                    strncpy(tmp, type_name, 10);
                     snprintf(padded_name, sizeof(padded_name), " %-3s", tmp);
                     strncpy(type_name,padded_name,4);
                     type_name[4] = '\0';
@@ -687,8 +650,6 @@ namespace OpenBabel
                   }
               }
             res_num = res->GetNum();
-            the_insertioncode = res->GetInsertionCode();
-            if (0 == the_insertioncode) the_insertioncode=' ';
           }
         else
           {
@@ -698,7 +659,6 @@ namespace OpenBabel
             strncpy(type_name,padded_name,4);
             type_name[4] = '\0';
             res_num = 1;
-            the_insertioncode=' ';
           }
 
         element_name = etab.GetSymbol(atom->GetAtomicNum());
@@ -712,14 +672,13 @@ namespace OpenBabel
             scharge[1] = scharge[0];
             scharge[0] = tmp;
           }
-        snprintf(buffer, BUFF_SIZE, "%s%5d %-4s %-3s %c%4d%c   %8.3f%8.3f%8.3f  1.00  0.00          %2s%2s\n",
+        snprintf(buffer, BUFF_SIZE, "%s%5d %-4s %-3s %c%4d    %8.3f%8.3f%8.3f  1.00  0.00          %2s%2s\n",
                  het?"HETATM":"ATOM  ",
                  i,
                  type_name,
                  the_res,
                  the_chain,
                  res_num,
-                 the_insertioncode,
                  atom->GetX(),
                  atom->GetY(),
                  atom->GetZ(),
@@ -736,27 +695,28 @@ namespace OpenBabel
         if (atom->GetValence() == 0)
           continue; // no need to write a CONECT record -- no bonds
 
+        snprintf(buffer, BUFF_SIZE, "CONECT%5d", i);
+        ofs << buffer;
         // Write out up to 4 real bonds per line PR#1711154
         int currentValence = 0;
         for (nbr = atom->BeginNbrAtom(k);nbr;nbr = atom->NextNbrAtom(k))
           {
-            if ((currentValence % 4) == 0) {
-              if (currentValence > 0) 
-                // Add the trailing space to finish the previous record
-                ofs << "                                       \n";
+            snprintf(buffer, BUFF_SIZE, "%5d", nbr->GetIdx());
+            ofs << buffer;
+            if (++currentValence % 4 == 0) {
+              // Add the trailing space to finish this record
+              ofs << "                                       \n";
               // write the start of a new CONECT record
               snprintf(buffer, BUFF_SIZE, "CONECT%5d", i);
               ofs << buffer;
             }
-            currentValence++;
-            snprintf(buffer, BUFF_SIZE, "%5d", nbr->GetIdx());
-            ofs << buffer;
           }
 
         // Add trailing spaces
-        while ((currentValence % 4) != 0) {
-          ofs << "     ";
-          currentValence++;
+        int remainingValence = atom->GetValence() % 4;
+        for (int count = 0; count < (4 - remainingValence); count++) {
+          snprintf(buffer, BUFF_SIZE, "     ");
+          ofs << buffer;
         }
         ofs << "                                       \n";
       }
@@ -766,85 +726,15 @@ namespace OpenBabel
     snprintf(buffer, BUFF_SIZE, "%4d    0 %4d    0\n",mol.NumAtoms(),mol.NumAtoms());
     ofs << buffer;
 
+    ofs << "END\n";
     if (model_num) {
       ofs << "ENDMDL" << endl;
-	  if (pConv->IsLast()) {
-	    ofs << "END\n";
-	  }
     }
-	else {
-	  ofs << "END\n";
-	}
 
     return(true);
   }
 
   ////////////////////////////////////////////////////////////////
-  static void fixRhombohedralSpaceGroupWriter(string &strHM)
-  {
-    /* This is due to the requirment of PDB to name rhombohedral groups
-       with H (http://deposit.rcsb.org/adit/docs/pdb_atom_format.html) */
-    const int SIZE = 7;
-    const char* groups[SIZE]  =   {"R 3:H",
-                                   "R -3:H",
-                                   "R 3 2:H",
-                                   "R 3 m:H",
-                                   "R 3 c:H",
-                                   "R -3 m:H",
-                                   "R -3 c:H"};
-
-    std::vector<string> vec(groups, groups + SIZE);
-    if(std::find(vec.begin(), vec.end(), strHM) != vec.end())
-    {
-      strHM[0] = 'H';
-    }
-  }
-
-  static void fixRhombohedralSpaceGroupReader(string &strHM)
-  {
-    /* This is due to the requirment of PDB to name rhombohedral groups
-       with H (http://deposit.rcsb.org/adit/docs/pdb_atom_format.html) */
-    const int SIZE = 7;
-    const char* groups[SIZE]  =   {"H 3",
-                                   "H -3",
-                                   "H 3 2",
-                                   "H 3 m",
-                                   "H 3 c",
-                                   "H -3 m",
-                                   "H -3 c"};
-
-    std::vector<string> vec(groups, groups + SIZE);
-
-    if(std::find(vec.begin(), vec.end(), strHM) != vec.end())
-    {
-      strHM[0] = 'R';
-      strHM += ":H";
-    }
-  }
-
-  /*
-
-     From http://deposit.rcsb.org/adit/docs/pdb_atom_format.html
-
-	COLUMNS        DATA TYPE       CONTENTS
-	--------------------------------------------------------------------------------
-	 1 -  6        Record name     "ATOM  "
-	 7 - 11        Integer         Atom serial number.
-	13 - 16        Atom            Atom name.
-	17             Character       Alternate location indicator.
-	18 - 20        Residue name    Residue name.
-	22             Character       Chain identifier.
-	23 - 26        Integer         Residue sequence number.
-	27             AChar           Code for insertion of residues.
-	31 - 38        Real(8.3)       Orthogonal coordinates for X in Angstroms.
-	39 - 46        Real(8.3)       Orthogonal coordinates for Y in Angstroms.
-	47 - 54        Real(8.3)       Orthogonal coordinates for Z in Angstroms.
-	55 - 60        Real(6.2)       Occupancy.
-	61 - 66        Real(6.2)       Temperature factor (Default = 0.0).
-	73 - 76        LString(4)      Segment identifier, left-justified.
-	77 - 78        LString(2)      Element symbol, right-justified.
-	79 - 80        LString(2)      Charge on the atom.
-  */
   static bool parseAtomRecord(char *buffer, OBMol &mol,int /*chainNum*/)
   /* ATOMFORMAT "(i5,1x,a4,a1,a3,1x,a1,i4,a1,3x,3f8.3,2f6.2,a2,a2)" */
   {
@@ -863,10 +753,6 @@ namespace OpenBabel
 
     /* chain */
     char chain = sbuf.substr(15,1)[0];
-
-    /* insertion code */
-    char insertioncode = sbuf.substr(27-6-1,1)[0];
-    if (' '==insertioncode) insertioncode=0;
 
     /* element */
     string element = "  ";
@@ -963,8 +849,7 @@ namespace OpenBabel
         // fix: #2002557
         if (atmid[0] == 'H' &&
             (atmid[1] == 'D' || atmid[1] == 'E' ||
-             atmid[1] == 'G' || atmid[1] == 'H' ||
-             atmid[1] == 'N')) // HD, HE, HG, HH, HN...
+             atmid[1] == 'G' || atmid[1] == 'H')) // HD, HE, HG, HH, ..
           type = "H";
       } else { //must be hetatm record
         if (isalpha(element[1]) && (isalpha(element[0]) || (element[0] == ' '))) {
@@ -1065,25 +950,20 @@ namespace OpenBabel
     if (res == NULL
         || res->GetName() != resname
         || res->GetNumString() != resnum
-        || res->GetChain() != chain
-        || res->GetInsertionCode() != insertioncode)
+        || res->GetChain() != chain)
       {
         vector<OBResidue*>::iterator ri;
         for (res = mol.BeginResidue(ri) ; res ; res = mol.NextResidue(ri))
           if (res->GetName() == resname
               && res->GetNumString() == resnum
-              && static_cast<int>(res->GetChain()) == chain
-              && static_cast<int>(res->GetInsertionCode()) == insertioncode) {
-            if (insertioncode) fprintf(stderr,"I: identified residue wrt insertion code: '%c'\n",insertioncode);
+              && static_cast<int>(res->GetChain()) == chain)
             break;
-          }
 
         if (res == NULL) {
           res = mol.NewResidue();
           res->SetChain(chain);
           res->SetName(resname);
           res->SetNum(resnum);
-          res->SetInsertionCode(insertioncode);
         }
       }
 

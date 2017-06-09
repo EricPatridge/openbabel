@@ -1,19 +1,17 @@
 # Library versioning
-set(SOVERSION 5)
-set(LIBRARY_VERSION 5.0.0)
+set(SOVERSION 4)
+set(LIBRARY_VERSION 4.0.2)
 
 set(charges
   charges/eem.cpp
   charges/gasteiger.cpp
   charges/none.cpp
   charges/mmff94.cpp
-  charges/fromfile.cpp
 )
 
 if (EIGEN2_FOUND OR EIGEN3_FOUND)
-# if eigen is available, compile QEq, EQeq, and QTPIE charge models
+# if eigen is available, compile QEq and QTPIE charge models
 set(charges ${charges}
-  charges/eqeq.cpp
   charges/qeq.cpp
   charges/qtpie.cpp
 )
@@ -36,7 +34,6 @@ set(descriptors
 set(fingerprints
   fingerprints/finger2.cpp
   fingerprints/finger3.cpp
-  fingerprints/fingerecfp.cpp
 )
 
 set(forcefields
@@ -63,18 +60,13 @@ set(ops
   ops/addfilename.cpp
   ops/addinindex.cpp
   ops/addpolarh.cpp
-  ops/addnonpolarh.cpp
   ops/canonical.cpp
-  ops/changecell.cpp
-  ops/delpolarh.cpp
-  ops/delnonpolarh.cpp
   ops/gen2D.cpp
   ops/fillUC.cpp
   ops/forcefield.cpp
   ops/gen3d.cpp
   ops/largest.cpp
   ops/loader.cpp
-  ops/opsplit.cpp
   ops/optransform.cpp
   ops/partialcharges.cpp
   ops/readconformers.cpp
@@ -87,7 +79,6 @@ if(EIGEN2_FOUND OR EIGEN3_FOUND)
   set(ops ${ops}
     ops/conformer.cpp
     ops/opalign.cpp
-    ops/opconfab.cpp
   )
 endif()
 
@@ -115,7 +106,6 @@ set(openbabel_srcs
   chargemodel.cpp
   chiral.cpp
   data.cpp
-  data_utilities.cpp
   descriptor.cpp
   fingerprint.cpp
   forcefield.cpp
@@ -148,7 +138,6 @@ set(openbabel_srcs
   rotamer.cpp
   rotor.cpp
   spectrophore.cpp
-  tautomer.cpp
   tokenst.cpp
   transform.cpp
   typer.cpp
@@ -157,8 +146,6 @@ set(openbabel_srcs
 if(EIGEN2_FOUND OR EIGEN3_FOUND)
   set(openbabel_srcs ${openbabel_srcs}
     conformersearch.cpp
-    confsearch.cpp
-    distgeom.cpp
   )
 endif ()
 
@@ -190,16 +177,13 @@ else(BUILD_SHARED)
   endforeach(plugingroup descriptors fingerprints forcefields ops charges)
 
   if(WITH_STATIC_INCHI)
-    if(NOT OPENBABEL_USE_SYSTEM_INCHI)
-      add_subdirectory(formats/libinchi)
-    endif()
+    add_subdirectory(formats/libinchi)
     set(openbabel_srcs ${openbabel_srcs} formats/getinchi.cpp ops/unique.cpp)
-    set(libs ${libs} ${INCHI_LIBRARY})
+    set(libs ${libs} inchi)
   endif(WITH_STATIC_INCHI)
 endif(BUILD_SHARED)
 
 set(openbabel_library_srcs
-  ${WRAP_MEMCPY_SRC}
   ${openbabel_srcs}
   ${depict_srcs}
   ${math_srcs}
@@ -209,9 +193,7 @@ set(openbabel_library_srcs
   )
 
 if(WIN32)
-  if(ZLIB_FOUND)
-    set(libs ${libs} ${ZLIB_LIBRARY})
-  endif(ZLIB_FOUND)
+  set(libs ${libs} ${ZLIB_LIBRARY})
 else(WIN32)
   # the C math library
   if(BUILD_MIXED)
@@ -251,7 +233,6 @@ if(MSVC)
   # Set the output name to openbabel-2 (preserves old behaviour). Is this desired?
   set_target_properties(openbabel PROPERTIES
     OUTPUT_NAME openbabel-2)
-  remove_definitions(_UNICODE UNICODE)
 endif(MSVC)
 
 # Export the openbabel target, for use in other projects
